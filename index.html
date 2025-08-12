@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>🤖 Mini GPT Pro 2.0 (Updated & Fixed)</title>
+    
+    <!-- Libraries for Markdown and Syntax Highlighting -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        /* ================ NEW DESIGN SYSTEM ================ */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code&display=swap');
+
+        :root {
+            --font-main: 'Inter', sans-serif;
+            --font-code: 'Fira Code', monospace;
+            
+            --bg-dark-primary: #1e1e2f;
+            --bg-dark-secondary: #27293d;
+            --bg-dark-tertiary: #3b3d55;
+            --bg-light-hover: #4a4c6b;
+            
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0c0;
+            --text-accent: #82aaff;
+            --text-white: #ffffff;
+            
+            --accent-primary: #5a87ff;
+            --accent-primary-hover: #709dff;
+            --accent-danger: #ff5572;
+            --accent-danger-hover: #ff7990;
+            --accent-secondary: #3b3d55;
+            --accent-secondary-hover: #4a4c6b;
+            
+            --border-color: #3b3d55;
+            --shadow-color: rgba(0, 0, 0, 0.2);
+            --code-bg: #161625;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            font-family: var(--font-main);
+            background-color: var(--bg-dark-primary);
+            color: var(--text-primary);
+            /* ===== FIX #1: REMOVED `overflow: hidden;` ===== */
+            /* This was the primary cause of the scrolling bug. The flexbox layout below is more robust. */
+        }
+
+        /* App Layout */
+        .app-layout {
+            display: grid;
+            grid-template-columns: 300px 1fr; /* Sidebar width, Main content takes the rest */
+            height: 100%;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            background-color: var(--bg-dark-secondary);
+            color: var(--text-primary);
+            padding: 1rem;
+            overflow-y: auto;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .new-chat-btn-container {
+            margin-bottom: 1rem;
+        }
+
+        .new-chat-btn {
+            background-color: var(--accent-primary);
+            color: var(--text-white);
+            border: none;
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .new-chat-btn:hover {
+            background-color: var(--accent-primary-hover);
+        }
+
+        .chat-list {
+            list-style: none;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .chat-list-item {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+            gap: 0.5rem; /* Added gap for spacing */
+            overflow: hidden; /* Prevents content from spilling out */
+        }
+        
+        .chat-list-item .chat-title-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1; /* Allow title to take up space */
+        }
+
+
+        .chat-list-item:hover {
+            background-color: var(--bg-light-hover);
+        }
+
+        .chat-list-item.active {
+            background-color: var(--bg-dark-tertiary);
+        }
+
+        .delete-chat-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: color 0.2s ease;
+            flex-shrink: 0; /* Prevents delete button from shrinking */
+        }
+
+        .delete-chat-btn:hover {
+            color: var(--accent-danger);
+        }
+
+        /* Main Chat View Styles */
+        .chat-view {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            /* ===== FIX #1 (Related): This container now properly constrains its children ===== */
+            /* because the body is no longer interfering with `overflow: hidden`. */
+            overflow: hidden; /* Ensures this container itself doesn't scroll */
+        }
+
+        .chat-header {
+            background-color: var(--bg-dark-secondary);
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0; /* Prevent header from shrinking */
+        }
+
+        .menu-btn {
+            display: none; /* Hidden by default, shown on mobile */
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        #chat-title {
+            font-weight: 500;
+        }
+
+        .status {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            border: 1px solid var(--text-secondary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+        }
+        
+        .status.online { color: #90ee90; border-color: #90ee90; }
+        .status.typing { color: #fbbf24; border-color: #fbbf24; }
+        .status.error { color: #ff5572; border-color: #ff5572; }
+
+        .chat-messages {
+            flex-grow: 1;
+            padding: 1rem;
+            overflow-y: auto; /* This is the element that will scroll for messages */
+        }
+        
+        .message-wrapper {
+             margin-bottom: 1rem;
+        }
+
+        .message {
+            display: flex;
+            gap: 0.75rem;
+            max-width: 95%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message.user .message-content {
+             background-color: var(--accent-primary);
+             color: var(--text-white);
+        }
+
+        .message.bot {
+            justify-content: flex-start;
+        }
+
+        .avatar {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            background-color: var(--bg-dark-tertiary);
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .message-content {
+            background-color: var(--bg-dark-tertiary);
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            max-width: 85%;
+            word-break: break-word;
+            line-height: 1.6;
+            /* ===== FIX #2: THE HORIZONTAL SCROLL FIX ===== */
+            min-width: 0; 
+            /* This is the key. It allows the flex item to shrink below its content's intrinsic size, */
+            /* preventing wide code blocks from stretching the entire message bubble. */
+        }
+
+        /* Action buttons for bot messages */
+        .message-actions {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0.5rem 0;
+            height: 0;
+            opacity: 0;
+            transition: opacity 0.3s, height 0.3s;
+        }
+
+        .message-wrapper:hover .message-actions {
+             height: auto;
+             opacity: 1;
+        }
+
+        .action-btn {
+            background-color: var(--accent-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .action-btn:hover {
+            background-color: var(--accent-secondary-hover);
+            color: var(--text-white);
+            border-color: var(--text-accent);
+        }
+        .action-btn svg { width: 14px; height: 14px; }
+
+
+        /* ===== IMPROVEMENT: Better Code Block Styling ===== */
+        .code-block-wrapper {
+            margin: 1em 0;
+        }
+
+        .code-header {
+            background-color: var(--bg-dark-secondary);
+            padding: 0.5em 1em;
+            border-top-left-radius: 0.5em;
+            border-top-right-radius: 0.5em;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            /* Sticky header will now work correctly within the scrolling .chat-messages container */
+            position: sticky;
+            top: 0; 
+            z-index: 2; /* Ensures it stays above the code */
+        }
+
+        .code-header span { color: var(--text-secondary); font-size: 0.8em; }
+
+        .copy-btn {
+            background-color: var(--bg-dark-tertiary);
+            color: var(--text-secondary);
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .copy-btn:hover { background-color: var(--bg-light-hover); color: var(--text-white); }
+        
+        .message-content pre {
+            background-color: var(--code-bg);
+            overflow-x: auto; /* This handles the horizontal scroll for code */
+            padding: 1em;
+            border-bottom-left-radius: 0.5em;
+            border-bottom-right-radius: 0.5em;
+            font-family: var(--font-code);
+            font-size: 0.9em;
+            line-height: 1.4;
+            /* Removed margin as it's now on the wrapper */
+            margin: 0;
+        }
+
+        /* Typing Indicator */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .typing-indicator span {
+            display: block; width: 8px; height: 8px;
+            background-color: var(--text-accent);
+            border-radius: 50%; margin: 0 2px;
+            animation: typing 1s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+        /* Chat Input Area */
+        .chat-input-area {
+            background-color: var(--bg-dark-secondary);
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+            flex-shrink: 0; /* Prevent input area from shrinking */
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: flex-end;
+            background-color: var(--bg-dark-tertiary);
+            border-radius: 0.5rem;
+            padding: 0.25rem;
+        }
+
+        #input-textarea {
+            flex-grow: 1;
+            background-color: transparent;
+            color: var(--text-primary);
+            border: none;
+            padding: 0.75rem 1rem;
+            border-radius: 0.25rem;
+            resize: none;
+            font-family: var(--font-main);
+            font-size: 1rem;
+            max-height: 150px;
+        }
+
+        #input-textarea:focus { outline: none; }
+
+        .send-btn, .stop-btn {
+            background-color: var(--accent-primary);
+            color: var(--text-white);
+            border: none;
+            padding: 0.5rem;
+            width: 40px;
+            height: 40px;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            margin-left: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .send-btn svg, .stop-btn svg { width: 24px; height: 24px; }
+
+
+        .send-btn:hover { background-color: var(--accent-primary-hover); }
+
+        .stop-btn { background-color: var(--accent-danger); }
+        .stop-btn:hover { background-color: var(--accent-danger-hover); }
+
+        .stop-btn.hidden, .send-btn.hidden { display: none; }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .app-layout { grid-template-columns: 1fr; }
+
+            .sidebar {
+                position: fixed; top: 0; left: 0; bottom: 0; width: 85%;
+                transform: translateX(-100%); z-index: 1000;
+                box-shadow: 5px 0 15px var(--shadow-color);
+                transition: transform 0.3s ease;
+            }
+            .sidebar.open { transform: translateX(0); }
+            .menu-btn { display: block; }
+            .message-content { max-width: 90%; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-layout">
+    <!-- Sidebar for Chat History -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1>Mini GPT Pro</h1>
+        </div>
+        <div class="new-chat-btn-container">
+            <button class="new-chat-btn" id="new-chat-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+                </svg>
+                New Chat
+            </button>
+        </div>
+        <ul class="chat-list" id="chat-list">
+            <!-- Chat history will be inserted here -->
+        </ul>
+    </aside>
+
+    <!-- Main Chat Interface -->
+    <main class="chat-view">
+        <header class="chat-header">
+            <button class="menu-btn" id="menu-btn">☰</button>
+            <div id="chat-title">Welcome!</div>
+            <div class="status online" id="status-indicator">Online</div>
+        </header>
+
+        <div class="chat-messages" id="chat-messages">
+            <!-- Messages will be inserted here -->
+        </div>
+
+        <footer class="chat-input-area">
+            <div class="input-wrapper">
+                <textarea id="input-textarea" placeholder="Type your message..." rows="1"></textarea>
+                <button class="send-btn" id="send-btn" title="Send">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z"></path></svg>
+                </button>
+                <button class="stop-btn hidden" id="stop-btn" title="Stop Generation">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4.5 7.5a3 3 0 013-3h9a3 3 0 013 3v9a3 3 0 01-3 3h-9a3 3 0 01-3-3v-9z" clip-rule="evenodd"></path></svg>
+                </button>
+            </div>
+        </footer>
+    </main>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // DOM Elements
+    const sidebar = document.getElementById('sidebar');
+    const menuBtn = document.getElementById('menu-btn');
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const chatList = document.getElementById('chat-list');
+    const chatTitle = document.getElementById('chat-title');
+    const chatMessages = document.getElementById('chat-messages');
+    const inputTextArea = document.getElementById('input-textarea');
+    const sendBtn = document.getElementById('send-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const statusIndicator = document.getElementById('status-indicator');
+
+    // App State
+    let abortController = null;
+    let appState = {
+        currentChatId: null,
+        chats: {},
+        isLoading: false,
+    };
+
+    function init() {
+        loadStateFromLocalStorage();
+        renderSidebar();
+        
+        if (!appState.currentChatId || !appState.chats[appState.currentChatId]) {
+            startNewChat();
+        } else {
+            switchToChat(appState.currentChatId);
+        }
+
+        setupEventListeners();
+        autoResizeTextarea();
+        inputTextArea.focus();
+    }
+
+    // --- STATE MANAGEMENT ---
+    function loadStateFromLocalStorage() {
+        try {
+            const savedState = localStorage.getItem('miniGptProState');
+            if (savedState) {
+                appState = JSON.parse(savedState);
+                if (typeof appState.chats !== 'object' || appState.chats === null) appState.chats = {};
+            }
+        } catch (e) { console.error("Could not load state:", e); appState.chats = {}; }
+    }
+
+    function saveStateToLocalStorage() {
+        try {
+            localStorage.setItem('miniGptProState', JSON.stringify(appState));
+        } catch (e) { console.error("Could not save state:", e); }
+    }
+
+    // --- UI RENDERING ---
+    function renderSidebar() {
+        chatList.innerHTML = '';
+        const sortedChats = Object.values(appState.chats).sort((a, b) => b.createdAt - a.createdAt);
+        
+        sortedChats.forEach(chat => {
+            const li = document.createElement('li');
+            li.className = `chat-list-item ${chat.id === appState.currentChatId ? 'active' : ''}`;
+            li.dataset.chatId = chat.id;
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'chat-title-text';
+            titleSpan.textContent = chat.title || 'Untitled Chat';
+            titleSpan.title = chat.title || 'Untitled Chat';
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-chat-btn';
+            deleteBtn.innerHTML = '🗑️';
+            deleteBtn.title = 'Delete Chat';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                if (confirm(`Are you sure you want to delete "${chat.title || 'this chat'}"?`)) {
+                    deleteChat(chat.id);
+                }
+            };
+            
+            li.appendChild(titleSpan);
+            li.appendChild(deleteBtn);
+            li.onclick = () => switchToChat(chat.id);
+            chatList.appendChild(li);
+        });
+    }
+
+    function renderChatMessages() {
+        chatMessages.innerHTML = '';
+        const currentChat = appState.chats[appState.currentChatId];
+        if (!currentChat || !currentChat.messages) return;
+
+        currentChat.messages.forEach((msg) => {
+            addMessageToUI(msg.role, msg.content);
+        });
+        
+        addRegenerateButtonIfNeeded();
+        scrollToBottom();
+    }
+    
+    function addMessageToUI(role, content) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper';
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${role}`;
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+        avatar.textContent = role === 'user' ? 'U' : '🤖';
+        
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+
+        if (role === 'bot' && content === 'typing') {
+            messageContent.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
+        } else {
+            renderMarkdown(messageContent, content);
+        }
+        
+        // Arrange message based on role
+        if (role === 'user') {
+            messageDiv.appendChild(messageContent);
+            messageDiv.appendChild(avatar);
+        } else {
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(messageContent);
+        }
+
+        wrapper.appendChild(messageDiv);
+        chatMessages.appendChild(wrapper);
+        
+        scrollToBottom();
+        return messageContent;
+    }
+
+    function renderMarkdown(element, markdownText) {
+        // Use a "dirty" parse to allow HTML for the typing indicator
+        element.innerHTML = marked.parse(markdownText || '', { gfm: true, breaks: true });
+        
+        // ===== IMPROVEMENT: Correctly structure code blocks for sticky headers =====
+        element.querySelectorAll('pre').forEach(pre => {
+            const codeBlock = pre.querySelector('code');
+            if (!codeBlock) return;
+
+            const language = [...codeBlock.classList].find(cls => cls.startsWith('language-'))?.replace('language-', '') || 'plaintext';
+            
+            // 1. Create a dedicated wrapper
+            const wrapper = document.createElement('div');
+            wrapper.className = 'code-block-wrapper';
+
+            // 2. Create the header
+            const header = document.createElement('div');
+            header.className = 'code-header';
+            
+            const langSpan = document.createElement('span');
+            langSpan.textContent = language;
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.onclick = () => {
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(codeBlock.innerText).then(() => {
+                        copyBtn.textContent = 'Copied!';
+                        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+                    }).catch(err => console.error('Failed to copy text: ', err));
+                }
+            };
+            
+            header.appendChild(langSpan);
+            header.appendChild(copyBtn);
+            
+            // 3. Assemble the new structure
+            wrapper.appendChild(header);
+            pre.parentNode.insertBefore(wrapper, pre); // Insert wrapper before pre
+            wrapper.appendChild(pre); // Move pre inside the wrapper
+
+            // 4. Highlight the code
+            hljs.highlightElement(codeBlock);
+        });
+    }
+
+    // --- REGENERATE RESPONSE ---
+    function addRegenerateButtonIfNeeded() {
+        const currentChat = appState.chats[appState.currentChatId];
+        if (!currentChat || currentChat.messages.length < 2 || appState.isLoading) return;
+
+        const lastMessage = currentChat.messages[currentChat.messages.length - 1];
+        const secondLastMessage = currentChat.messages[currentChat.messages.length - 2];
+
+        // Ensure the last message is from the bot and the one before is from the user
+        if (lastMessage.role === 'bot' && secondLastMessage.role === 'user') {
+            const lastMessageWrapper = chatMessages.lastElementChild;
+            if (!lastMessageWrapper) return;
+
+            let actionsDiv = lastMessageWrapper.querySelector('.message-actions');
+            if (actionsDiv) actionsDiv.remove(); // Remove old one if it exists
+
+            actionsDiv = document.createElement('div');
+            actionsDiv.className = 'message-actions';
+            
+            const regenerateBtn = document.createElement('button');
+            regenerateBtn.className = 'action-btn';
+            regenerateBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201-4.42 5.5 5.5 0 011.66-1.918l1.057.845a3.5 3.5 0 00-1.07 3.493 3.5 3.5 0 006.132 2.743l1.423 1.422a5.5 5.5 0 01-1.66 1.918zM17 5.5a5.5 5.5 0 01-9.223 4.392l-1.423-1.422a3.5 3.5 0 006.177-2.971l1.058-.845a5.5 5.5 0 013.411.845zM4.688 8.576a5.5 5.5 0 019.201 4.42 5.5 5.5 0 01-1.66 1.918l-1.057-.845a3.5 3.5 0 001.07-3.493 3.5 3.5 0 00-6.132-2.743L4.688 8.576z" clip-rule="evenodd" /></svg> Regenerate`;
+            regenerateBtn.onclick = regenerateLastResponse;
+            
+            actionsDiv.appendChild(regenerateBtn);
+            lastMessageWrapper.appendChild(actionsDiv);
+        }
+    }
+
+    function regenerateLastResponse() {
+        if (appState.isLoading) return;
+        const currentChat = appState.chats[appState.currentChatId];
+        
+        // Remove the last bot message from state
+        currentChat.messages.pop(); 
+        
+        const lastUserMessage = currentChat.messages[currentChat.messages.length - 1];
+        if (!lastUserMessage || lastUserMessage.role !== 'user') {
+            console.error("Could not find a valid user message to regenerate from.");
+            return;
+        }
+
+        // Re-render chat UI to remove the last bot message visually
+        renderChatMessages(); 
+        
+        _sendMessageToServer(lastUserMessage.content, true);
+    }
+
+
+    // --- CHAT LOGIC ---
+    function startNewChat() {
+        if (appState.isLoading) return;
+        const newId = Date.now().toString();
+        appState.currentChatId = newId;
+        appState.chats[newId] = {
+            id: newId,
+            title: 'New Chat',
+            messages: [],
+            createdAt: Date.now()
+        };
+        switchToChat(newId);
+    }
+
+    function switchToChat(chatId) {
+        if (appState.isLoading || !appState.chats[chatId]) return;
+        
+        appState.currentChatId = chatId;
+        const chat = appState.chats[chatId];
+        chatTitle.textContent = chat.title || 'Untitled Chat';
+        
+        renderSidebar();
+        renderChatMessages();
+        saveStateToLocalStorage();
+        inputTextArea.focus();
+
+        if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+            sidebar.classList.remove('open');
+        }
+    }
+
+    function deleteChat(chatId) {
+        delete appState.chats[chatId];
+        saveStateToLocalStorage(); // Save immediately
+        if (appState.currentChatId === chatId) {
+            const remainingChats = Object.values(appState.chats).sort((a,b) => b.createdAt - a.createdAt);
+            if (remainingChats.length > 0) {
+                switchToChat(remainingChats[0].id);
+            } else {
+                startNewChat();
+            }
+        } else {
+            renderSidebar(); // Just update the sidebar if we deleted an inactive chat
+        }
+    }
+
+    function sendMessage() {
+        const messageText = inputTextArea.value.trim();
+        if (!messageText || appState.isLoading) return;
+
+        _sendMessageToServer(messageText, false);
+    }
+
+    async function _sendMessageToServer(textToSend, isRegeneration = false) {
+        setLoadingState(true);
+        const currentChat = appState.chats[appState.currentChatId];
+        
+        document.querySelectorAll('.message-actions').forEach(el => el.remove());
+
+        if (!isRegeneration) {
+            const userMessage = { role: 'user', content: textToSend };
+            currentChat.messages.push(userMessage);
+            addMessageToUI('user', textToSend);
+            if (currentChat.messages.length === 1 && currentChat.title === 'New Chat') {
+                currentChat.title = textToSend.substring(0, 40) + (textToSend.length > 40 ? '...' : '');
+                chatTitle.textContent = currentChat.title;
+                renderSidebar();
+            }
+            inputTextArea.value = '';
+            autoResizeTextarea();
+        }
+
+        const botMessageBubble = addMessageToUI('bot', 'typing');
+        abortController = new AbortController();
+        
+        try {
+            const res = await fetch("/chat", {
+                method: "POST",
+                signal: abortController.signal,
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ session: currentChat.id, text: textToSend })
+            });
+
+            if (!res.ok) throw new Error(`Server error: ${res.statusText} (${res.status})`);
+            
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let botResponse = "";
+            
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                botResponse += decoder.decode(value, { stream: true });
+                renderMarkdown(botMessageBubble, botResponse + " ▋"); // Typing cursor effect
+                scrollToBottom();
+            }
+            
+            renderMarkdown(botMessageBubble, botResponse);
+            currentChat.messages.push({ role: 'bot', content: botResponse });
+            
+        } catch (error) {
+            let errorMessage;
+            if (error.name === 'AbortError') {
+                errorMessage = "Request stopped by user.";
+            } else {
+                errorMessage = `**Error:** ${error.message}. Please check your connection or the server.`;
+                setStatus('Error', 'error');
+            }
+            renderMarkdown(botMessageBubble, errorMessage);
+            currentChat.messages.push({ role: 'bot', content: errorMessage });
+        } finally {
+            setLoadingState(false);
+            addRegenerateButtonIfNeeded();
+            saveStateToLocalStorage();
+            inputTextArea.focus();
+        }
+    }
+
+
+    // --- EVENT LISTENERS & UTILITIES ---
+    function setupEventListeners() {
+        menuBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuBtn.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+        
+        newChatBtn.addEventListener('click', startNewChat);
+        sendBtn.addEventListener('click', sendMessage);
+        stopBtn.addEventListener('click', () => {
+             if(abortController) abortController.abort();
+        });
+
+        inputTextArea.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        inputTextArea.addEventListener('input', autoResizeTextarea);
+    }
+
+    function setLoadingState(isLoading) {
+        appState.isLoading = isLoading;
+        sendBtn.classList.toggle('hidden', isLoading);
+        stopBtn.classList.toggle('hidden', !isLoading);
+        inputTextArea.disabled = isLoading;
+        // Make the new chat button less prominent when loading
+        newChatBtn.style.opacity = isLoading ? '0.5' : '1';
+        newChatBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
+        
+        if(isLoading) {
+            setStatus('Typing...', 'typing');
+        } else {
+            setTimeout(() => {
+                const currentStatus = statusIndicator.classList.contains('error') ? 'error' : 'online';
+                const currentText = statusIndicator.classList.contains('error') ? 'Error' : 'Online';
+                setStatus(currentText, currentStatus);
+            }, 500);
+        }
+    }
+
+    function setStatus(text, className) {
+        statusIndicator.textContent = text;
+        statusIndicator.className = `status ${className}`;
+    }
+
+    function scrollToBottom() {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function autoResizeTextarea() {
+        inputTextArea.style.height = 'auto';
+        const newHeight = Math.min(inputTextArea.scrollHeight, 150);
+        inputTextArea.style.height = `${newHeight}px`;
+    }
+
+    // Let's go!
+    init();
+});
+</script>
+
+</body>
+</html>
