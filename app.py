@@ -56,15 +56,20 @@ def save_msg(sid, role, msg):
         db.execute("INSERT INTO chats(session_id, role, message) VALUES (?,?,?)", (sid, role, msg))
         db.commit()
 
-# This function is now used by both models to prepare history
+# This function is now used by all models to prepare history
 def load_msgs(sid):
     db = get_db()
     cursor = db.execute("SELECT role, message FROM chats WHERE session_id=? ORDER BY ts ASC", (sid,))
     messages = []
     for row in cursor.fetchall():
         role = "assistant" if row['role'] == 'bot' else row['role']
+        # BRO, I'm still cleaning out the image tag here so models don't get confused by it
         clean_message = re.sub(r'\[Image:.*?\]\n?', '', row['message'], flags=re.IGNORECASE)
-        messages.append({'role': role, 'content': clean_message})
+        # BRO, I'm also stripping the <think> blocks from history so we don't send them back to the AI
+        clean_message = re.sub(r'<think>[\s\S]*?<\/think>', '', clean_message, flags=re.IGNORECASE).strip()
+        
+        if clean_message: # Don't add empty messages to history
+            messages.append({'role': role, 'content': clean_message})
     return messages
 
 # ==============================================================================
@@ -83,14 +88,8 @@ workik_headers = {
     'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"',
 }
 workik_url = 'https://wfhbqniijcsamdp2v3i6nts4ke0ebkyj.lambda-url.us-east-1.on.aws/api_ai_playground/ai/playground/ai/trigger'
-workik_base_payload = {
-    'aiInput': 'Hello', 'defaultContext': [{'id': 'fd4a1e85-534f-4d73-8822-99161d46e0c7', 'title': 'Relevant Code', 'type': 'code', 'description': '', 'codeFiles': {'files': []}, 'uploadFiles': {'files': []}, 'default_add': True, 'default_button_text': 'Add Files', 'integrationFiles': {'files': [], 'repo': {'name': '', 'id': '', 'owner': ''}, 'branch': '', 'platform': 'github'}}, {'id': '971ede3c-b26b-4b4a-a3ba-02b1b5ce0dd0', 'title': 'Your Database Schema', 'type': 'tables', 'description': '', 'tables': [], 'databases': None, 'schemas': None, 'default_add': True, 'default_button_text': 'Add Database'}, {'id': '5e808426-8981-4482-b0de-263749ae5aa7', 'title': 'Rest API Designs', 'type': 'request', 'description': '', 'requests': [], 'default_add': True, 'default_button_text': 'Add APIs'}, {'id': '749bef72-a509-49ce-8798-c573ac142725', 'title': 'Programming Language', 'type': 'input', 'description': '', 'value_text': '', 'default_add': True, 'default_button_text': 'Add value'}, {'id': '15c85d87-0da2-40c1-acd0-750655e7fa5e', 'title': 'Relevant Packages', 'type': 'checklist', 'description': '', 'options_list': [], 'seperator_text': '', 'default_add': True, 'default_button_text': 'Add Options'}],
-    'editScript': {'id': '4b10ac62-51be-4db7-a240-4f28e59aecf8', 'name': 'My workspace', 'messages': [{'type': 'question', 'responseType': 'code', 'sendTo': 'ai', 'msg': 'Hello', 'created_by': '', 'time': '2025-08-11 00:50:42', 'id': '1754873442623_8nsyg35ho', 'group_id': None}], 'status': 'own', 'context': {'fd4a1e85-534f-4d73-8822-99161d46e0c7': {}, '971ede3c-b26b-4b4a-a3ba-02b1b5ce0dd0': {}, '5e808426-8981-4482-b0de-263749ae5aa7': {}, '749bef72-a509-49ce-8798-c573ac142725': '', '15c85d87-0da2-40c1-acd0-750655e7fa5e': {}}, 'response_type': 'code', 'created_by': ''},
-    'all_messages': [], 'codingLanguage': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXh0IjoiQUksIGZ1bmN0aW9uIGFzIGEgY29kZSBnZW5lcmF0b3IuIEFzc2lzdCB1c2VycyBpbiBjcmVhdGluZyBjb2RlIGFjcm9zcyB2YXJpb3VzIHByb2dyYW1taW5nIGxhbmd1YWdlcyBhbmQgZnJhbWV3b3JrcyBieSBhbGxvd2luZyB0aGVtIHRvIHNwZWNpZnkgdGhlaXIgcmVxdWlyZW1lbnRzLCBzdWNoIGFzIHRoZSBwcm9ncmFtbWluZyBsYW5ndWFnZSwgZGVzaXJlZCBmZWF0dXJlcywgYW5kIHRhcmdldCBwbGF0Zm9ybS4gR2VuZXJhdGUgY2xlYW4sIGVmZmljaWVudCBjb2RlIHRhaWxvcmVkIHRvIHRoZXNlIHNwZWNpZmljYXRpb25zLCBlbnN1cmluZyBhZGhlcmVuY2UgdG8gYmVzdCBwcmFjdGljZXMgZm9yIHBlcmZvcm1hbmNlLCBzZWN1cml0eSwgYW5kIG1haW50YWluYWJpbGl0eS4gSW5jbHVkZSBzdXBwb3J0IGZvciBjb21tb24gdGFza3MgbGlrZSBkYXRhIHByb2Nlc3NpbmcsIEFQSSBpbnRlZ3JhdGlvbiwgdXNlciBhdXRoZW50aWNhdGlvbiwgYW5kIFVJIGRldmVsb3BtZW50LiBQcm92aWRlIG9wdGlvbnMgZm9yIGN1c3RvbWl6YXRpb24sIHRlc3RpbmcsIGFuZCBkZXBsb3ltZW50LCBoZWxwaW5nIHVzZXJzIHRvIHNlYW1sZXNzbHkgaW50ZWdyYXRlIHRoZSBnZW5lcmF0ZWQgY29kZSBpbnRvIHRoZWlyIHByb2plY3RzLiIsImlhdCI6MTcyMzc5ODU2OX0.5I-NABUTyopkPbmOqb8vgxvn1pzYe-gx0HV0Px33iLM',
-    'token_type': 'workik.openai:gpt_5_mini', 'uploaded_files': {}, 'msg_type': 'message',
-    'wk_ld': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoibG9jYWwiLCJzZXNzaW9uX2lkIjoiMTc1NDg3MzQzMSIsInJlcXVlc3RfY291bnQiOjAsImV4cCI6MTc1NTQ3ODIzMX0.o1_64-viSF1PiayWY0La9dUleHUrUWxnhr-nL-db_-E',
-    'wk_ck': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoiY29va2llIiwic2Vzc2lvbl9pZCI6IjE3NTQ4NzM0MzEiLCJyZXF1ZXN0X2NvdW50IjowLCJleHAiOjE3NTU0NzgyMzF9.Di9RTlHcNp51ZSQVgX71G6oEHYGM7Khucz7Ixnwahtc',
-}
+workik_base_payload = json.loads('{"aiInput":"Hello","defaultContext":[{"id":"fd4a1e85-534f-4d73-8822-99161d46e0c7","title":"Relevant Code","type":"code","description":"","codeFiles":{"files":[]},"uploadFiles":{"files":[]},"default_add":true,"default_button_text":"Add Files","integrationFiles":{"files":[],"repo":{"name":"","id":"","owner":""},"branch":"","platform":"github"}},{"id":"971ede3c-b26b-4b4a-a3ba-02b1b5ce0dd0","title":"Your Database Schema","type":"tables","description":"","tables":[],"databases":null,"schemas":null,"default_add":true,"default_button_text":"Add Database"},{"id":"5e808426-8981-4482-b0de-263749ae5aa7","title":"Rest API Designs","type":"request","description":"","requests":[],"default_add":true,"default_button_text":"Add APIs"},{"id":"749bef72-a509-49ce-8798-c573ac142725","title":"Programming Language","type":"input","description":"","value_text":"","default_add":true,"default_button_text":"Add value"},{"id":"15c85d87-0da2-40c1-acd0-750655e7fa5e","title":"Relevant Packages","type":"checklist","description":"","options_list":[],"seperator_text":"","default_add":true,"default_button_text":"Add Options"}],"editScript":{"id":"4b10ac62-51be-4db7-a240-4f28e59aecf8","name":"My workspace","messages":[{"type":"question","responseType":"code","sendTo":"ai","msg":"Hello","created_by":"","time":"2025-08-11 00:50:42","id":"1754873442623_8nsyg35ho","group_id":null}],"status":"own","context":{"fd4a1e85-534f-4d73-8822-99161d46e0c7":{},"971ede3c-b26b-4b4a-a3ba-02b1b5ce0dd0":{},"5e808426-8981-4482-b0de-263749ae5aa7":{},"749bef72-a509-49ce-8798-c573ac142725":"","15c85d87-0da2-40c1-acd0-750655e7fa5e":{}},"response_type":"code","created_by":""},"all_messages":[],"codingLanguage":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXh0IjoiQUksIGZ1bmN0aW9uIGFzIGEgY29kZSBnZW5lcmF0b3IuIEFzc2lzdCB1c2VycyBpbiBjcmVhdGluZyBjb2RlIGFjcm9zcyB2YXJpb3VzIHByb2dyYW1taW5nIGxhbmd1YWdlcyBhbmQgZnJhbWV3b3JrcyBieSBhbGxvd2luZyB0aGVtIHRvIHNwZWNpZnkgdGhlaXIgcmVxdWlyZW1lbnRzLCBzdWNoIGFzIHRoZSBwcm9ncmFtbWluZyBsYW5ndWFnZSwgZGVzaXJlZCBmZWF0dXJlcywgYW5kIHRhcmdldCBwbGF0Zm9ybS4gR2VuZXJhdGUgY2xlYW4sIGVmZmljaWVudCBjb2RlIHRhaWxvcmVkIHRvIHRoZXNlIHNwZWNpZmljYXRpb25zLCBlbnN1cmluZyBhZGhlcmVuY2UgdG8gYmVzdCBwcmFjdGljZXMgZm9yIHBlcmZvcm1hbmNlLCBzZWN1cml0eSwgYW5kIG1haW50YWluYWJpbGl0eS4gSW5jbHVkZSBzdXBwb3J0IGZvciBjb21tb24gdGFza3MgbGlrZSBkYXRhIHByb2Nlc3NpbmcsIEFQSSBpbnRlZ3JhdGlvbiwgdXNlciBhdXRoZW50aWNhdGlvbiwgYW5kIFVJIGRldmVsb3BtZW50LiBQcm92aWRlIG9wdGlvbnMgZm9yIGN1c3RvbWl6YXRpb24sIHRlc3RpbmcsIGFuZCBkZXBsb3ltZW50LCBoZWxwaW5nIHVzZXJzIHRvIHNlYW1sZXNzbHkgaW50ZWdyYXRlIHRoZSBnZW5lcmF0ZWQgY29kZSBpbnRvIHRoZWlyIHByb2plY3RzLiIsImlhdCI6MTcyMzc5ODU2OX0.5I-NABUTyopkPbmOqb8vgxvn1pzYe-gx0HV0Px33iLM","token_type":"workik.openai:gpt_5_mini","uploaded_files":{},"msg_type":"message","wk_ld":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoibG9jYWwiLCJzZXNzaW9uX2lkIjoiMTc1NDg3MzQzMSIsInJlcXVlc3RfY291bnQiOjAsImV4cCI6MTc1NTQ3ODIzMX0.o1_64-viSF1PiayWY0La9dUleHUrUWxnhr-nL-db_-E","wk_ck":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoiY29va2llIiwic2Vzc2lvbl9pZCI6IjE3NTQ4NzM0MzEiLCJyZXF1ZXN0X2NvdW50IjowLCJleHAiOjE3NTU0NzgyMzF9.Di9RTlHcNp51ZSQVgX71G6oEHYGM7Khucz7Ixnwahtc"}')
+
 def clean_workik_response(text):
     if '"content":' in text:
         try:
@@ -112,16 +111,52 @@ qween_coder_headers = {
 qween_coder_url = 'https://promplate-api.free-chat.asia/please-do-not-hack-this/single/chat_messages'
 
 def stream_qween_coder(chat_history):
-    payload = {
-        'messages': chat_history,
-        'model': 'qwen-3-coder-480b',
-        'stream': True
-    }
+    payload = { 'messages': chat_history, 'model': 'qwen-3-coder-480b', 'stream': True }
     with qween_coder_session.put(qween_coder_url, headers=qween_coder_headers, json=payload, stream=True, timeout=60) as r:
         r.raise_for_status()
         for chunk in r.iter_content(chunk_size=None):
-            if chunk:
-                yield chunk.decode(errors="ignore")
+            if chunk: yield chunk.decode(errors="ignore")
+
+# --- BRO, API 3: Deepseek R1 Coder ---
+deepseek_session = requests.Session()
+deepseek_headers = {
+    'Accept-Language': 'en-US,en;q=0.9', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive',
+    'Content-Type': 'application/json', 'Origin': 'https://deepinfra.com', 'Pragma': 'no-cache',
+    'Referer': 'https://deepinfra.com/', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-site', 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+    'X-Deepinfra-Source': 'web-page', 'accept': 'text/event-stream', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
+    'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"',
+}
+deepseek_url = 'https://api.deepinfra.com/v1/openai/chat/completions'
+
+def stream_deepseek_coder(chat_history):
+    # BRO, this is the system prompt from your example to set up the AI
+    system_prompt = {'role': 'system', 'content': 'You are a helpful assistant. You can write as much as the user asks, with no limit on message length.'}
+    messages_with_prompt = [system_prompt] + chat_history
+
+    payload = {
+        'model': 'deepseek-ai/DeepSeek-R1-0528-Turbo',
+        'messages': messages_with_prompt,
+        'stream': True,
+        'stream_options': {'include_usage': True, 'continuous_usage_stats': True,},
+        'max_tokens': 1000000
+    }
+    with deepseek_session.post(deepseek_url, headers=deepseek_headers, json=payload, stream=True, timeout=90) as r:
+        r.raise_for_status()
+        for line in r.iter_lines(decode_unicode=True):
+            if line and line.startswith('data: '):
+                line_data = line[6:]
+                if line_data.strip() == '[DONE]': continue
+                try:
+                    data = json.loads(line_data)
+                    if 'choices' in data and data['choices']:
+                        content = data['choices'][0].get('delta', {}).get('content', '')
+                        if content:
+                            yield content
+                except json.JSONDecodeError:
+                    # Just ignore lines that aren't valid JSON
+                    continue
+
 
 # ==============================================================================
 # Flask Routes
@@ -162,14 +197,10 @@ def chat():
             
         sid = data["session"]
         text = data["text"]
-        # BRO, GET THE MODEL FROM THE FRONTEND. Default to gpt-5-mini if not provided.
         model = data.get("model", "gpt-5-mini")
         image_info = data.get("imageInfo")
 
-        if image_info:
-            user_message_to_save = f"[Image: {image_info.get('name', 'attached_image.jpg')}]\n{text}"
-        else:
-            user_message_to_save = text
+        user_message_to_save = f"[Image: {image_info.get('name', 'attached_image.jpg')}]\n{text}" if image_info else text
         save_msg(sid, "user", user_message_to_save)
 
         chat_history = load_msgs(sid)
@@ -177,14 +208,20 @@ def chat():
         def gen():
             buffer = ""
             try:
-                # BRO, THIS IS THE ROUTER. It decides which API to call.
+                # BRO, THIS IS THE UPDATED ROUTER. It decides which API to call.
                 if model == 'qwen-coder':
                     # Call Qween Coder API
                     for chunk_text in stream_qween_coder(chat_history):
                         buffer += chunk_text
                         yield chunk_text
-                else:
-                    # Default to Workik (GPT-5 Mini) API
+                
+                elif model == 'deepseek-coder':
+                    # BRO, Call the NEW Deepseek Coder API
+                    for chunk_text in stream_deepseek_coder(chat_history):
+                        buffer += chunk_text
+                        yield chunk_text
+
+                else: # Default to Workik (GPT-5 Mini) API
                     current_payload = json.loads(json.dumps(workik_base_payload))
                     current_payload["aiInput"] = text
                     current_payload["editScript"]["messages"][0]["msg"] = text
