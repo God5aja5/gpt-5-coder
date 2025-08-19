@@ -117,7 +117,7 @@ def stream_qween_coder(chat_history):
         for chunk in r.iter_content(chunk_size=None):
             if chunk: yield chunk.decode(errors="ignore")
 
-# --- BRO, API 3: Deepseek R1 Coder ---
+# --- API 3: Deepseek R1 Coder ---
 deepseek_session = requests.Session()
 deepseek_headers = {
     'Accept-Language': 'en-US,en;q=0.9', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive',
@@ -130,16 +130,11 @@ deepseek_headers = {
 deepseek_url = 'https://api.deepinfra.com/v1/openai/chat/completions'
 
 def stream_deepseek_coder(chat_history):
-    # BRO, this is the system prompt from your example to set up the AI
     system_prompt = {'role': 'system', 'content': 'You are a helpful assistant. You can write as much as the user asks, with no limit on message length.'}
     messages_with_prompt = [system_prompt] + chat_history
-
     payload = {
-        'model': 'deepseek-ai/DeepSeek-R1-0528-Turbo',
-        'messages': messages_with_prompt,
-        'stream': True,
-        'stream_options': {'include_usage': True, 'continuous_usage_stats': True,},
-        'max_tokens': 1000000
+        'model': 'deepseek-ai/DeepSeek-R1-0528-Turbo', 'messages': messages_with_prompt, 'stream': True,
+        'stream_options': {'include_usage': True, 'continuous_usage_stats': True,}, 'max_tokens': 1000000
     }
     with deepseek_session.post(deepseek_url, headers=deepseek_headers, json=payload, stream=True, timeout=90) as r:
         r.raise_for_status()
@@ -151,11 +146,51 @@ def stream_deepseek_coder(chat_history):
                     data = json.loads(line_data)
                     if 'choices' in data and data['choices']:
                         content = data['choices'][0].get('delta', {}).get('content', '')
-                        if content:
-                            yield content
-                except json.JSONDecodeError:
-                    # Just ignore lines that aren't valid JSON
-                    continue
+                        if content: yield content
+                except json.JSONDecodeError: continue
+
+# --- BRO, API 4: Chat GPT 5 Coder ---
+chat_gpt5_session = requests.Session()
+chat_gpt5_cookies = {
+    'ko_id': 'f1e011c8-3226-4fcb-bd73-f58945e1661b', 'visitor-id': 'SIOtZPa7g4AVFPGFjdAyb',
+    'authorization': 'Bearer%20mqeDIlwqu8hV2TsBWa96KrQu', 'isLoggedIn': '1',
+}
+chat_gpt5_headers = {
+    'authority': 'vercel.com', 'accept': 'text/event-stream', 'content-type': 'application/json',
+    'origin': 'https://vercel.com', 'referer': 'https://vercel.com/ai-gateway/models/gpt-5', 'user-agent': 'Mozilla/5.0',
+}
+chat_gpt5_params = {'slug': 'babbs-projects'}
+chat_gpt5_url = "https://vercel.com/api/ai/gateway-playground/chat/logged-in"
+
+def stream_chat_gpt5_coder(chat_history):
+    # BRO, this converts our standard history to the format this API needs
+    api_messages = []
+    for msg in chat_history:
+        api_messages.append({
+            "parts": [{"type": "text", "text": msg['content']}],
+            "id": str(uuid.uuid4()),
+            "role": msg['role'], # This API uses 'user' and 'assistant' roles which we already provide
+        })
+
+    payload = {
+        "model": "gpt-5",
+        "id": str(uuid.uuid4()),
+        "messages": api_messages,
+        "trigger": "submit-user-message",
+    }
+    with chat_gpt5_session.post(chat_gpt5_url, params=chat_gpt5_params, cookies=chat_gpt5_cookies, headers=chat_gpt5_headers, json=payload, stream=True, timeout=90) as r:
+        r.raise_for_status()
+        for line in r.iter_lines(decode_unicode=True):
+            if line and line.startswith("data:"):
+                line_data = line[5:].strip()
+                if line_data == "[DONE]": break
+                try:
+                    obj = json.loads(line_data)
+                    if obj.get("type") == "text-delta":
+                        delta = obj.get("delta", "")
+                        if not delta.startswith("__"): # skip metadata
+                            yield delta
+                except json.JSONDecodeError: continue
 
 
 # ==============================================================================
@@ -210,14 +245,18 @@ def chat():
             try:
                 # BRO, THIS IS THE UPDATED ROUTER. It decides which API to call.
                 if model == 'qwen-coder':
-                    # Call Qween Coder API
                     for chunk_text in stream_qween_coder(chat_history):
                         buffer += chunk_text
                         yield chunk_text
                 
                 elif model == 'deepseek-coder':
-                    # BRO, Call the NEW Deepseek Coder API
                     for chunk_text in stream_deepseek_coder(chat_history):
+                        buffer += chunk_text
+                        yield chunk_text
+
+                # BRO, I ADDED THE NEW MODEL HERE
+                elif model == 'chat-gpt-5-coder':
+                    for chunk_text in stream_chat_gpt5_coder(chat_history):
                         buffer += chunk_text
                         yield chunk_text
 
@@ -225,11 +264,8 @@ def chat():
                     current_payload = json.loads(json.dumps(workik_base_payload))
                     current_payload["aiInput"] = text
                     current_payload["editScript"]["messages"][0]["msg"] = text
-                    if len(chat_history) > 1:
-                        current_payload['all_messages'] = chat_history[:-1]
-                    else:
-                        current_payload['all_messages'] = []
-
+                    if len(chat_history) > 1: current_payload['all_messages'] = chat_history[:-1]
+                    else: current_payload['all_messages'] = []
                     if image_info:
                         context_id = str(uuid.uuid4())
                         file_id = image_info['id']
@@ -237,15 +273,12 @@ def chat():
                         current_payload['defaultContext'].insert(0, attached_files_context)
                         current_payload['editScript']['context'][context_id] = {file_id: True}
                         current_payload['uploaded_files'][file_id] = image_info['base64']
-
                     with workik_session.post(workik_url, headers=workik_headers, json=current_payload, stream=True, timeout=60) as r:
                         r.raise_for_status() 
                         for line in r.iter_lines(decode_unicode=True):
                             if line:
                                 chunk = clean_workik_response(line)
-                                if chunk:
-                                    buffer += chunk
-                                    yield chunk
+                                if chunk: buffer += chunk; yield chunk
             
             except requests.exceptions.RequestException as e:
                 print(f"API Request error for model '{model}': {e}")
