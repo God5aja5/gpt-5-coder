@@ -8,6 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
     <style>
         /* ================ DESIGN SYSTEM (UNCHANGED) ================ */
@@ -79,8 +81,6 @@
         .send-btn:hover { background-color: var(--accent-primary-hover); }
         .stop-btn { background-color: var(--accent-danger); } .stop-btn:hover { background-color: var(--accent-danger-hover); }
         .stop-btn.hidden, .send-btn.hidden, .attach-btn.hidden { display: none; }
-
-        /* BRO, NEW CSS FOR MESSAGE ACTIONS AND THINKING MODAL (UNCHANGED) */
         .message-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0 0 0; opacity: 0.7; transition: opacity 0.2s ease; }
         .message-wrapper:hover .message-actions { opacity: 1; }
         .message.user .message-actions { justify-content: flex-end; }
@@ -147,7 +147,6 @@
 </div>
 
 <script>
-// BRO, THE JAVASCRIPT IS UNCHANGED. It's smart enough to handle the new model from the dropdown.
 document.addEventListener('DOMContentLoaded', () => {
 
     const sidebar = document.getElementById('sidebar');
@@ -273,7 +272,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             messageContent.dataset.rawContent = textContent;
             const renderedMarkdown = marked.parse(textContent || '', { gfm: true, breaks: true });
-            messageContent.innerHTML += renderedMarkdown;
+            
+            // BRO, THIS IS THE SECURITY FIX. We sanitize the HTML before adding it.
+            const sanitizedHtml = DOMPurify.sanitize(renderedMarkdown);
+            messageContent.innerHTML += sanitizedHtml;
         }
 
         messageBody.appendChild(messageContent);
@@ -345,7 +347,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const thinkMatch = thinkRegex.exec(fullTextResponse);
         
         const visibleText = fullTextResponse.replace(thinkRegex, '').trim();
-        messageContentElement.innerHTML = marked.parse(visibleText, { gfm: true, breaks: true });
+        const dirtyHtml = marked.parse(visibleText, { gfm: true, breaks: true });
+        
+        // BRO, SANITIZING HERE TOO.
+        messageContentElement.innerHTML = DOMPurify.sanitize(dirtyHtml);
         
         if (thinkMatch && thinkMatch[1]) {
             const thinkingText = thinkMatch[1].trim();
@@ -367,12 +372,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const modalContent = document.createElement('div');
         modalContent.className = 'modal-content';
 
+        // BRO, also sanitizing the thinking text just in case. Better safe than sorry.
+        const cleanThinkingText = DOMPurify.sanitize(thinkingText);
         modalContent.innerHTML = `
             <div class="modal-header">
                 <h3>AI Thought Process</h3>
                 <button class="modal-close-btn">&times;</button>
             </div>
-            <div class="modal-body">${thinkingText}</div>
+            <div class="modal-body">${cleanThinkingText}</div>
         `;
         
         modalContent.querySelector('.modal-close-btn').onclick = () => document.body.removeChild(modalOverlay);
@@ -448,6 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function sendMessage() {
+        // BRO, I'm setting the user's message using .textContent to prevent their input from running as HTML
         const messageText = inputTextArea.value.trim();
         if ((!messageText && !appState.attachedImageInfo) || appState.isLoading) return;
 
@@ -458,9 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const isRegenerating = lastMessage && lastMessage.role === 'user' && lastMessage.content.includes(messageText);
 
         if (!isRegenerating) {
-            let userMessage = { role: 'user', content: messageText, image: null, rawText: messageText };
+            let userMessage = { role: 'user', content: messageText, image: null };
             if (appState.attachedImageInfo) {
                 userMessage.image = appState.attachedImageInfo.base64;
+                // The content saved to DB is just text, so it's safe.
                 userMessage.content = `[Image: ${appState.attachedImageInfo.name}]\n${messageText}`;
             }
             currentChat.messages.push(userMessage);
@@ -468,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderChatMessages(); 
         
-        if (currentChat.messages.length === 1 && currentChat.title === 'New Chat') {
+        if (currentChat.messages.length <= 1 && currentChat.title === 'New Chat') {
             currentChat.title = messageText.substring(0, 40) + (messageText.length > 40 ? '...' : '');
             chatTitle.textContent = currentChat.title;
             renderSidebar();
@@ -497,7 +506,9 @@ document.addEventListener('DOMContentLoaded', () => {
             while (true) {
                 const { value, done } = await reader.read(); if (done) break;
                 botResponse += decoder.decode(value, { stream: true });
-                botMessageBubble.innerHTML = marked.parse(botResponse + " ▋", { gfm: true, breaks: true });
+                const dirtyHtml = marked.parse(botResponse + " ▋", { gfm: true, breaks: true });
+                // BRO, SANITIZING THE LIVE RESPONSE. SECURITY FIRST!
+                botMessageBubble.innerHTML = DOMPurify.sanitize(dirtyHtml);
                 renderMarkdown(botMessageBubble);
                 scrollToBottom();
             }
@@ -514,7 +525,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             let errorMessage = error.name === 'AbortError' ? "Request stopped by user." : `**Error:** ${error.message}. Please check your connection or the server.`;
             setStatus('Error', 'error');
-            botMessageBubble.innerHTML = marked.parse(errorMessage, { gfm: true, breaks: true });
+            const errorHtml = marked.parse(errorMessage, { gfm: true, breaks: true });
+            // BRO, sanitizing the error message too.
+            botMessageBubble.innerHTML = DOMPurify.sanitize(errorHtml);
             currentChat.messages.push({ role: 'bot', content: errorMessage });
         } finally {
             setLoadingState(false);
@@ -579,7 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
         newChatBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
         
         if (isLoading) { if(!statusIndicator.textContent.includes('Uploading')) setStatus('Typing...', 'typing'); } 
-        else { setTimeout(() => { const s = statusIndicator.classList.contains('error') ? {t:'Error', c:'error'} : {t:'Online', c:'online'}; setStatus(s.t, s.c); }, 500); }
+        else { setTimeout(() => { if (!statusIndicator.classList.contains('error')) { setStatus('Online', 'online'); } }, 500); }
     }
 
     function setStatus(text, className) { statusIndicator.textContent = text; statusIndicator.className = `status ${className}`; }
