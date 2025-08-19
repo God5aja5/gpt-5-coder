@@ -80,7 +80,7 @@
         .stop-btn { background-color: var(--accent-danger); } .stop-btn:hover { background-color: var(--accent-danger-hover); }
         .stop-btn.hidden, .send-btn.hidden, .attach-btn.hidden { display: none; }
 
-        /* BRO, NEW CSS FOR MESSAGE ACTIONS AND THINKING MODAL */
+        /* BRO, NEW CSS FOR MESSAGE ACTIONS AND THINKING MODAL (UNCHANGED) */
         .message-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0 0 0; opacity: 0.7; transition: opacity 0.2s ease; }
         .message-wrapper:hover .message-actions { opacity: 1; }
         .message.user .message-actions { justify-content: flex-end; }
@@ -118,8 +118,8 @@
             <select id="model-selector">
                 <option value="gpt-5-mini">GPT-5 Mini (Default)</option>
                 <option value="qwen-coder">Qwen Coder</option>
-                <!-- BRO, HERE IS THE NEW MODEL IN THE DROPDOWN -->
                 <option value="deepseek-coder">Deepseek R1 Coder</option>
+                <option value="chat-gpt-5-coder">Chat GPT 5 Coder</option>
             </select>
         </div>
         
@@ -147,6 +147,7 @@
 </div>
 
 <script>
+// BRO, THE JAVASCRIPT IS UNCHANGED. It's smart enough to handle the new model from the dropdown.
 document.addEventListener('DOMContentLoaded', () => {
 
     const sidebar = document.getElementById('sidebar');
@@ -253,7 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
         avatar.className = 'avatar';
         avatar.textContent = role === 'user' ? 'U' : '🤖';
         
-        // BRO, I created a message-body to hold the content and actions together
         const messageBody = document.createElement('div');
         messageBody.className = 'message-body';
         
@@ -271,7 +271,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (role === 'bot' && content === 'typing') {
             messageContent.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
         } else {
-            // Store raw content for copying
             messageContent.dataset.rawContent = textContent;
             const renderedMarkdown = marked.parse(textContent || '', { gfm: true, breaks: true });
             messageContent.innerHTML += renderedMarkdown;
@@ -279,7 +278,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         messageBody.appendChild(messageContent);
         
-        // BRO, THIS IS WHERE THE ACTION BUTTONS ARE ADDED
         if (role !== 'bot' || content !== 'typing') {
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'message-actions';
@@ -288,21 +286,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const copyBtn = document.createElement('button');
                 copyBtn.className = 'action-btn';
                 copyBtn.title = 'Copy message';
-                copyBtn.innerHTML = '&#x1F4CB;'; // Clipboard icon
+                copyBtn.innerHTML = '&#x1F4CB;'; 
                 copyBtn.onclick = () => navigator.clipboard.writeText(messageContent.dataset.rawContent);
                 actionsDiv.appendChild(copyBtn);
             } else if (role === 'bot') {
                 const regenerateBtn = document.createElement('button');
                 regenerateBtn.className = 'action-btn';
                 regenerateBtn.title = 'Regenerate response';
-                regenerateBtn.innerHTML = '&#x21BB;'; // Regenerate icon
+                regenerateBtn.innerHTML = '&#x21BB;'; 
                 regenerateBtn.onclick = regenerateLastResponse;
                 actionsDiv.appendChild(regenerateBtn);
 
                 const copyBtn = document.createElement('button');
                 copyBtn.className = 'action-btn';
                 copyBtn.title = 'Copy response';
-                copyBtn.innerHTML = '&#x1F4CB;'; // Clipboard icon
+                copyBtn.innerHTML = '&#x1F4CB;'; 
                 copyBtn.onclick = () => navigator.clipboard.writeText(messageContent.dataset.rawContent);
                 actionsDiv.appendChild(copyBtn);
             }
@@ -314,7 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
         wrapper.appendChild(messageDiv);
         chatMessages.appendChild(wrapper);
 
-        // Run post-processing for code blocks and thinking tags
         if (role === 'bot' && content !== 'typing') {
             postProcessBotMessage(messageContent, textContent);
         } else {
@@ -343,12 +340,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // BRO, NEW FUNCTION TO HANDLE THE <THINK> TAGS
     function postProcessBotMessage(messageContentElement, fullTextResponse) {
         const thinkRegex = /<think>([\s\S]*?)<\/think>/gi;
         const thinkMatch = thinkRegex.exec(fullTextResponse);
         
-        // Render the visible part first
         const visibleText = fullTextResponse.replace(thinkRegex, '').trim();
         messageContentElement.innerHTML = marked.parse(visibleText, { gfm: true, breaks: true });
         
@@ -364,7 +359,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMarkdown(messageContentElement);
     }
 
-    // BRO, NEW FUNCTION TO SHOW THE THINKING MODAL
     function showThinkingModal(thinkingText) {
         const modalOverlay = document.createElement('div');
         modalOverlay.className = 'modal-overlay';
@@ -415,7 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modelSelector.value = chat.model || 'gpt-5-mini';
         const isLocked = chat.messages.length > 0;
         modelSelector.disabled = isLocked;
-        // BRO, I updated this to hide the attach button for deepseek-coder too
         const showAttachBtn = chat.model === 'gpt-5-mini';
         attachBtn.style.display = showAttachBtn ? 'flex' : 'none';
         if (!showAttachBtn) clearImagePreview();
@@ -431,13 +424,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else { renderSidebar(); }
     }
 
-    // BRO, NEW FUNCTION FOR REGENERATING THE LAST RESPONSE
     function regenerateLastResponse() {
         if (appState.isLoading) return;
         const currentChat = appState.chats[appState.currentChatId];
         if (!currentChat || currentChat.messages.length === 0) return;
 
-        // Find the last user message to resend
         let lastUserMessage = null;
         for (let i = currentChat.messages.length - 1; i >= 0; i--) {
             if (currentChat.messages[i].role === 'user') {
@@ -445,14 +436,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             }
         }
-        if (!lastUserMessage) return; // No user message found to regenerate from
+        if (!lastUserMessage) return;
 
-        // Remove the last bot response from state
         if (currentChat.messages[currentChat.messages.length - 1].role === 'bot') {
             currentChat.messages.pop();
         }
         
-        // Set the input text and send
         const userText = lastUserMessage.content.replace(/\[Image:.*?\]\n?/, '');
         inputTextArea.value = userText;
         sendMessage();
@@ -465,8 +454,6 @@ document.addEventListener('DOMContentLoaded', () => {
         setLoadingState(true);
         const currentChat = appState.chats[appState.currentChatId];
         
-        // This part checks if this is a "regenerate" flow or a new message
-        // If the last message is a user message with the same content, we don't add it again.
         const lastMessage = currentChat.messages[currentChat.messages.length - 1];
         const isRegenerating = lastMessage && lastMessage.role === 'user' && lastMessage.content.includes(messageText);
 
@@ -479,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentChat.messages.push(userMessage);
         }
 
-        renderChatMessages(); // Re-render to show the user message (or remove old bot message)
+        renderChatMessages(); 
         
         if (currentChat.messages.length === 1 && currentChat.title === 'New Chat') {
             currentChat.title = messageText.substring(0, 40) + (messageText.length > 40 ? '...' : '');
@@ -515,11 +502,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 scrollToBottom();
             }
             
-            // Final processing after stream ends
             const finalBotMessage = { role: 'bot', content: botResponse };
             currentChat.messages.push(finalBotMessage);
             
-            // Replace the typing bubble with the final, processed message
             const finalBubbleParent = botMessageBubble.closest('.message-wrapper');
             if (finalBubbleParent) {
                 finalBubbleParent.remove();
@@ -594,7 +579,7 @@ document.addEventListener('DOMContentLoaded', () => {
         newChatBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
         
         if (isLoading) { if(!statusIndicator.textContent.includes('Uploading')) setStatus('Typing...', 'typing'); } 
-        else { setTimeout(() => { const s = statusIndicator.classList.contains('error') ? {t:'Error', c:'error'} : {t:'Error', c:'error'}; setStatus(s.t, s.c); }, 500); }
+        else { setTimeout(() => { const s = statusIndicator.classList.contains('error') ? {t:'Error', c:'error'} : {t:'Online', c:'online'}; setStatus(s.t, s.c); }, 500); }
     }
 
     function setStatus(text, className) { statusIndicator.textContent = text; statusIndicator.className = `status ${className}`; }
