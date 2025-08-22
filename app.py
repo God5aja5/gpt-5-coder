@@ -89,7 +89,7 @@ def load_msgs(sid):
 # --- _NEW_: Shared Artifact System Prompt ---
 ARTIFACT_PROMPT = {
     "role": "system",
-    "content": "You are a world-class AI assistant with a 'second brain' or 'scratchpad'. Before providing your final answer, you MUST use a `<think>` block to outline your reasoning, plan, and any intermediate steps or self-corrections. This 'thinking' process is for your internal use and helps you arrive at the most accurate and comprehensive response. The user will not see the content of the `<think>` block directly. Structure your thought process logically. After the closing `</think>` tag, provide your final, user-facing answer based on your reasoning. Current date: Thursday, August 21, 2025."
+    "content": "You are a world-class AI assistant with a 'second brain' or 'scratchpad'. Before providing your final answer, you MUST use a `<think>` block to outline your reasoning, plan, and any intermediate steps or self-corrections. This 'thinking' process is for your internal use and helps you arrive at the most accurate and comprehensive response. The user will not see the content of the `<think>` block directly. Structure your thought process logically. After the closing `</think>` tag, provide your final, user-facing answer based on your reasoning. Current date: Friday, August 22, 2025."
 }
 
 # --- Groq API Section (Models 1-4) with Smart Memory ---
@@ -118,7 +118,7 @@ def truncate_history(history, max_chars=8000):
 
 def stream_groq_model(chat_history, model_name, temperature):
     if model_name not in GROQ_MODELS:
-        yield f"🚨 Groq API Error: Model '{model_name}' not found."
+        yield f"🚨 Groq AI Error: Model '{model_name}' not found."
         return
     
     # _NEW_: Apply Smart Memory truncation
@@ -300,75 +300,43 @@ def stream_pro_reasoner_high(sid, chat_history):
 
 # --- _NEW_ GPT-5 Mini API (claila.com) ---
 claila_session = requests.Session()
-def get_claila_session_id():
-    cookies = {
-        'theme': 'dark',
-        'dmcfkjn3cdc': 'l8pt3msqnqaessfqncumocu06b',
-        'claila': '7b31744b259c5b06e6fe6edb2c4fef094491e7fd6e6de84a3ec4618a017d61f0',
-        # Note: You may need to update these cookies regularly if the site changes them.
-    }
-    headers = {
-        'authority': 'app.claila.com',
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'accept-language': 'en-US,en;q=0.9',
-        'cache-control': 'no-cache',
-        'pragma': 'no-cache',
-        'referer': 'https://app.claila.com/chat',
-        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
-        'sec-ch-ua-mobile': '?1',
-        'sec-ch-ua-platform': '"Android"',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'same-origin',
-        'sec-fetch-user': '?1',
-        'upgrade-insecure-requests': '1',
-        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
-    }
-    try:
-        response = claila_session.get('https://app.claila.com/chat', cookies=cookies, headers=headers)
-        session_id = re.search(r"session_id\s*:\s*'([^']+)'", response.text).group(1)
-        return session_id
-    except Exception as e:
-        print(f"Error fetching Claila session ID: {e}")
-        return None
+CLALA_SYSTEM_PROMPT = "You are an AI assistant. Answer clearly and concisely."
+claila_sessions = {}
 
+# --- Fetch CSRF Token ---
 def get_claila_csrf_token():
-    cookies = {
-        'theme': 'dark',
-        'dmcfkjn3cdc': 'l8pt3msqnqaessfqncumocu06b',
-        'claila': '7b31744b259c5b06e6fe6edb2c4fef094491e7fd6e6de84a3ec4618a017d61f0',
-        # Note: You may need to update these cookies regularly if the site changes them.
-    }
-    headers = {
-        'authority': 'app.claila.com',
-        'accept': '*/*',
-        'accept-language': 'en-US,en;q=0.9',
-        'cache-control': 'no-cache',
-        'pragma': 'no-cache',
-        'referer': 'https://app.claila.com/chat?registration_ok',
-        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
-        'sec-ch-ua-mobile': '?1',
-        'sec-ch-ua-platform': '"Android"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
-        'x-requested-with': 'XMLHttpRequest',
-    }
     url = "https://app.claila.com/api/v2/getcsrftoken"
+    headers = {
+        'accept': '*/*',
+        'x-requested-with': 'XMLHttpRequest',
+        'user-agent': 'Mozilla/5.0'
+    }
     try:
-        response = claila_session.get(url, cookies=cookies, headers=headers)
+        response = claila_session.get(url, headers=headers)
         response.raise_for_status()
         return response.text.strip()
     except Exception as e:
         print(f"Error fetching Claila CSRF token: {e}")
         return None
 
-# Dictionary to store session IDs for each user (sid)
-claila_sessions = {}
-CLALA_SYSTEM_PROMPT = "You are an AI assistant. Answer clearly and concisely."
+# --- Fetch Session ID ---
+def get_claila_session_id():
+    url = "https://app.claila.com/chat"
+    headers = {
+        'accept': 'text/html',
+        'user-agent': 'Mozilla/5.0'
+    }
+    try:
+        response = claila_session.get(url, headers=headers)
+        response.raise_for_status()
+        match = re.search(r"session_id\s*:\s*'([^']+)'", response.text)
+        return match.group(1) if match else None
+    except Exception as e:
+        print(f"Error fetching Claila session ID: {e}")
+        return None
 
 def stream_claila_gpt5_mini(sid, text):
+    # This logic is critical for maintaining a 1-to-1 chat session
     if sid not in claila_sessions:
         session_id = get_claila_session_id()
         csrf_token = get_claila_csrf_token()
@@ -388,32 +356,13 @@ def stream_claila_gpt5_mini(sid, text):
         message_to_send = f"{CLALA_SYSTEM_PROMPT}\n\nUser: {text}"
         current_session_data["first_message"] = False
 
-    cookies = {
-        'theme': 'dark',
-        'dmcfkjn3cdc': 'l8pt3msqnqaessfqncumocu06b',
-        'claila': '7b31744b259c5b06e6fe6edb2c4fef094491e7fd6e6de84a3ec4618a017d61f0',
-        # Note: You may need to update these cookies regularly if the site changes them.
-    }
+    url = "https://app.claila.com/api/v2/unichat2"
     headers = {
-        'authority': 'app.claila.com',
-        'accept': '*/*',
-        'accept-language': 'en-US,en;q=0.9',
-        'cache-control': 'no-cache',
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'origin': 'https://app.claila.com',
-        'pragma': 'no-cache',
-        'referer': 'https://app.claila.com/chat?registration_ok',
-        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
-        'sec-ch-ua-mobile': '?1',
-        'sec-ch-ua-platform': '"Android"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
         'x-csrf-token': current_session_data["csrf_token"],
         'x-requested-with': 'XMLHttpRequest',
+        'user-agent': 'Mozilla/5.0'
     }
-    url = "https://app.claila.com/api/v2/unichat2"
     data = {
         'model': 'gpt-5-mini',
         'calltype': 'completion',
@@ -421,7 +370,7 @@ def stream_claila_gpt5_mini(sid, text):
         'sessionId': current_session_data["session_id"],
     }
     try:
-        with claila_session.post(url, cookies=cookies, headers=headers, data=data, stream=True, timeout=90) as response:
+        with claila_session.post(url, headers=headers, data=data, stream=True, timeout=90) as response:
             response.raise_for_status()
             for chunk in response.iter_content(chunk_size=32):
                 if chunk:
