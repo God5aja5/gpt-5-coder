@@ -1,4 +1,4 @@
-# app.py FULL CORRECTED VERSION
+# app.py FULL CORRECTED VERSION WITH CLAUDE 4, GROQ SMART MEMORY & PRO REASONER
 
 import os
 import time
@@ -12,6 +12,8 @@ from flask import Flask, Response, stream_with_context, request, jsonify, g, sen
 import requests
 from PIL import Image
 import io
+import random
+from groq import Groq
 
 # ==============================================================================
 # Database Setup
@@ -62,7 +64,7 @@ def update_last_bot_message(sid, new_content_chunk):
         cursor = db.execute("SELECT id, message FROM chats WHERE session_id=? AND role='bot' ORDER BY ts DESC LIMIT 1", (sid,))
         last_bot_msg = cursor.fetchone()
         if last_bot_msg:
-            updated_message = last_bot_msg['message'] + "\n" + new_content_chunk
+            updated_message = last_bot_msg['message'] + new_content_chunk
             db.execute("UPDATE chats SET message=? WHERE id=?", (updated_message, last_bot_msg['id']))
             db.commit()
         else:
@@ -74,6 +76,7 @@ def load_msgs(sid):
     messages = []
     for row in cursor.fetchall():
         role = "assistant" if row['role'] == 'bot' else row['role']
+        # The Pro Reasoner, Groq, and Claude models may send an artifact, so we store it and remove for display
         clean_message = re.sub(r'<think>[\s\S]*?<\/think>', '', row['message'], flags=re.IGNORECASE).strip()
         if clean_message:
             messages.append({'role': role, 'content': clean_message})
@@ -83,7 +86,87 @@ def load_msgs(sid):
 # API Integration Section
 # ==============================================================================
 
-# --- API 1: Workik (GPT-5 Mini) ---
+# --- _NEW_: Shared Artifact System Prompt ---
+ARTIFACT_PROMPT = {
+    "role": "system",
+    "content": "You are a world-class AI assistant with a 'second brain' or 'scratchpad'. Before providing your final answer, you MUST use a `<think>` block to outline your reasoning, plan, and any intermediate steps or self-corrections. This 'thinking' process is for your internal use and helps you arrive at the most accurate and comprehensive response. The user will not see the content of the `<think>` block directly. Structure your thought process logically. After the closing `</think>` tag, provide your final, user-facing answer based on your reasoning. Current date: Thursday, August 21, 2025."
+}
+
+# --- Groq API Section (Models 1-4) with Smart Memory ---
+groq_client = Groq(api_key="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")
+GROQ_MODELS = {
+    'moonshotai/kimi-k2-instruct': 16384,
+    'openai/gpt-oss-20b': 65536,
+    'openai/gpt-oss-120b': 65536,
+    'qwen/qwen3-32b': 40960
+}
+
+# _NEW_: Smart Memory function to truncate history for Groq
+def truncate_history(history, max_chars=8000):
+    truncated_history = []
+    current_chars = 0
+    # Iterate backwards (from newest to oldest)
+    for msg in reversed(history):
+        msg_len = len(msg.get('content', ''))
+        if current_chars + msg_len <= max_chars:
+            truncated_history.insert(0, msg)
+            current_chars += msg_len
+        else:
+            # Stop when we exceed the character limit
+            break
+    return truncated_history
+
+def stream_groq_model(chat_history, model_name, temperature):
+    if model_name not in GROQ_MODELS:
+        yield f"🚨 Groq API Error: Model '{model_name}' not found."
+        return
+    
+    # _NEW_: Apply Smart Memory truncation
+    truncated_chat_history = truncate_history(chat_history)
+    messages_with_prompt = [ARTIFACT_PROMPT] + truncated_chat_history
+    max_tokens = GROQ_MODELS[model_name]
+
+    try:
+        completion = groq_client.chat.completions.create(
+            model=model_name, messages=messages_with_prompt, temperature=float(temperature),
+            max_tokens=max_tokens, top_p=1, stream=True, stop=None
+        )
+        for chunk in completion:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+    except Exception as e:
+        yield f"🚨 Groq AI Error: {str(e)}"
+
+# --- _NEW_: Claude 4 Sonnet API (Non-Streaming) ---
+claude_session = requests.Session()
+claude_headers = { 'authority': 'askai.free', 'accept': '*/*', 'accept-language': 'en-US,en;q=0.9', 'cache-control': 'no-cache', 'content-type': 'application/json', 'origin': 'https://askai.free', 'pragma': 'no-cache', 'referer': 'https://askai.free/claude-sonnet-4', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-origin', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
+
+def get_claude_sonnet_response(chat_history, temperature):
+    # Note: The provided API might not use the temperature, but we include it for consistency.
+    messages_with_prompt = [ARTIFACT_PROMPT] + chat_history
+    payload = {
+        'messages': messages_with_prompt,
+        'modelName': 'Claude Sonnet 4',
+        'currentPagePath': '/claude-sonnet-4',
+        'stream': True # The API endpoint requires stream=True, but we will collect the full response here.
+    }
+    try:
+        full_response = ""
+        with claude_session.post('https://askai.free/api/chat', headers=claude_headers, json=payload, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if line:
+                    try:
+                        data = json.loads(line.decode('utf-8'))
+                        if 'response' in data:
+                            full_response += data['response']
+                    except json.JSONDecodeError:
+                        continue # Ignore non-json lines
+        return full_response
+    except Exception as e:
+        return f"🚨 Claude 4 API Error: {str(e)}"
+
+# --- API: Workik (GPT-5 Mini) ---
 workik_session = requests.Session()
 workik_headers = { 'Accept': 'application/json', 'Accept-Language': 'en-US,en;q=0.9', 'Authorization': 'undefined', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Content-Type': 'application/json; charset=utf-8', 'Origin': 'https://workik.com', 'Pragma': 'no-cache', 'Referer': 'https://workik.com/', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'cross-site', 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', 'X-Is-VSE': 'false', 'X-VSE-Version': '0.0.0', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', }
 workik_url = 'https://wfhbqniijcsamdp2v3i6nts4ke0ebkyj.lambda-url.us-east-1.on.aws/api_ai_playground/ai/playground/ai/trigger'
@@ -95,11 +178,11 @@ def clean_workik_response(text):
             if clean_text.startswith('data:'):
                 clean_text = clean_text[5:].strip()
             return json.loads(clean_text)['content']
-        except (json.JSONDecodeError, KeyError):
-            return ''
+        except (json.JSONDecodeError, KeyError): return ''
     return ''
 
-# --- API 2: Qween Coder ---
+# ... (Other existing API functions: Qween Coder, Deepseek, GPT-5 Coder, GPT-5 Nano, Pro Reasoner High) ...
+# --- API: Qween Coder ---
 qween_coder_session = requests.Session()
 qween_coder_headers = { 'authority': 'promplate-api.free-chat.asia', 'accept': '*/*', 'accept-language': 'en-US,en;q=0.9', 'cache-control': 'no-cache', 'content-type': 'application/json', 'origin': 'https://e11.free-chat.asia', 'pragma': 'no-cache', 'referer': 'https://e11.free-chat.asia/', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-site', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
 qween_coder_url = 'https://promplate-api.free-chat.asia/please-do-not-hack-this/single/chat_messages'
@@ -113,7 +196,7 @@ def stream_qween_coder(chat_history):
     except Exception as e:
         yield f"🚨 Qwen Coder API Error: {str(e)}"
 
-# --- API 3: Deepseek R1 Coder ---
+# --- API: Deepseek R1 Coder ---
 deepseek_session = requests.Session()
 deepseek_headers = { 'Accept-Language': 'en-US,en;q=0.9', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Content-Type': 'application/json', 'Origin': 'https://deepinfra.com', 'Pragma': 'no-cache', 'Referer': 'https://deepinfra.com/', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-site', 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', 'X-Deepinfra-Source': 'web-page', 'accept': 'text/event-stream', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', }
 deepseek_url = 'https://api.deepinfra.com/v1/openai/chat/completions'
@@ -137,7 +220,7 @@ def stream_deepseek_coder(chat_history):
     except Exception as e:
         yield f"🚨 Deepseek API Error: {str(e)}"
 
-# --- API 4: Chat GPT 5 Coder ---
+# --- API: Chat GPT 5 Coder ---
 chat_gpt5_session = requests.Session()
 chat_gpt5_cookies = { 'ko_id': 'f1e011c8-3226-4fcb-bd73-f58945e1661b', 'visitor-id': 'SIOtZPa7g4AVFPGFjdAyb', 'authorization': 'Bearer%20mqeDIlwqu8hV2TsBWa96KrQu', 'isLoggedIn': '1',}
 chat_gpt5_headers = { 'authority': 'vercel.com', 'accept': 'text/event-stream', 'content-type': 'application/json', 'origin': 'https://vercel.com', 'referer': 'https://vercel.com/ai-gateway/models/gpt-5', 'user-agent': 'Mozilla/5.0',}
@@ -162,13 +245,12 @@ def stream_chat_gpt5_coder(chat_history):
     except Exception as e:
         yield f"🚨 GPT-5 API Error: {str(e)}"
 
-# --- API 5: Chat GPT 5 Nano ---
+# --- API: Chat GPT 5 Nano ---
 chat_gpt5_nano_session = requests.Session()
 chat_gpt5_nano_cookies = { 'cf_clearance': '9oeaYAOIe5lTD5UstzBKH7xGvgKS4izMzHuryteSlas-1755693133-1.2.1.1', 'sbjs_current_add': 'fd%3D2025-08-20%2012%3A02%3A11%7C%7C%7Cep%3Dhttps%3A%2F%2Fchatgpt.ch%2F%7C%7C%7Crf%3Dhttps%3A%2F%2Fwww.google.com%2F', }
 chat_gpt5_nano_headers = { 'authority': 'chatgpt.ch', 'accept': '*/*', 'content-type': 'application/x-www-form-urlencoded', 'origin': 'https://chatgpt.ch', 'referer': 'https://chatgpt.ch/', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
 chat_gpt5_nano_url = "https://chatgpt.ch/wp-admin/admin-ajax.php"
 NANO_SYSTEM_PROMPT = "You are a helpful AI assistant expert in coding. Always answer in clear English."
-
 def stream_chat_gpt5_nano(chat_history):
     history_str = "\n".join([f"{m['role'].replace('assistant', 'bot').title()}: {m['content']}" for m in chat_history])
     full_prompt = f"{NANO_SYSTEM_PROMPT}\n{history_str}"
@@ -188,16 +270,58 @@ def stream_chat_gpt5_nano(chat_history):
     except Exception as e:
         yield f"🚨 ChatGPT-5 Nano API Error: {str(e)}"
 
+# --- API: Pro Reasoner High ---
+pro_reasoner_session = requests.Session()
+pro_reasoner_headers = { 'authority': 'apis.updf.com', 'accept': 'application/json, text/plain, */*', 'accept-language': 'en-US', 'cache-control': 'no-cache', 'device-id': '4158c453c7b295e5e5e71668dcb533b8', 'device-type': 'WEB', 'origin': 'https://ai.updf.com', 'pragma': 'no-cache', 'product-name': 'UPDF', 'referer': 'https://ai.updf.com/', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-site', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', 'x-token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVaWQiOjQwMjEwNDgyMzksIm4iOiJVUERGXzQwMjEwNDgyMzkiLCJnIjoxLCJjIjpudWxsLCJCdWZmZXJUaW1lIjo4NjQwMCwiZXhwIjoxNzU4MzYyNDc4LCJpc3MiOiJxbVBsdXMiLCJuYmYiOjE3NTU3Njk0Nzh9.kGXxkMaVRLqWsiOTwiuZ549iJvDyIk53Ys0qX7NBd3U', }
+pro_reasoner_url = 'https://apis.updf.com/v1/ai/chat/talk-stream'
+updf_single_chat_ids = {}
+def get_single_chat_id(sid):
+    if sid in updf_single_chat_ids: return updf_single_chat_ids[sid]
+    try:
+        response = pro_reasoner_session.get('https://apis.updf.com/v1/ai/chat/single-chat-id', headers=pro_reasoner_headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get('code') == 200 and 'data' in data and 'single_chat_id' in data['data']:
+            chat_id = data['data']['single_chat_id']
+            updf_single_chat_ids[sid] = chat_id
+            return chat_id
+        else: return None
+    except Exception as e:
+        print(f"Failed to get new single_chat_id: {e}")
+        return None
+def stream_pro_reasoner_high(sid, chat_history):
+    single_chat_id = get_single_chat_id(sid)
+    if not single_chat_id:
+        yield "🚨 Pro Reasoner High API Error: Failed to initialize chat."
+        return
+    api_history = [{'role': 'user' if m['role'] == 'user' else 'assistant', 'content': re.sub(r'<think>[\s\S]*?<\/think>', '', m['content'], flags=re.IGNORECASE).strip()} for m in chat_history]
+    payload = { 'id': random.randint(1, 10**18), 'content': api_history[-1]['content'], 'target_lang': 'en', 'chat_type': 'random_talk', 'chat_id': random.randint(1, 10**18), 'file_id': 0, 'knowledge_id': 0, 'continue': 0, 'retry': 0, 'model': 'reasoning', 'provider': 'deepseek', 'format': 'md', 'single_chat_id': single_chat_id, 'history': api_history[:-1] }
+    try:
+        with pro_reasoner_session.post(pro_reasoner_url, headers=pro_reasoner_headers, json=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line.decode('utf-8'))
+                        if 'choices' in chunk and chunk['choices']:
+                            for choice in chunk['choices']:
+                                delta = choice.get('delta', {})
+                                content = delta.get('content')
+                                reasoning_content = delta.get('reasoning_content')
+                                if content or reasoning_content:
+                                    full_chunk = f"<think>{reasoning_content}</think>{content}" if reasoning_content else content
+                                    yield full_chunk
+                    except (json.JSONDecodeError, UnicodeDecodeError): continue
+    except Exception as e: yield f"🚨 Pro Reasoner High API Error: {str(e)}"
+
 # ==============================================================================
 # Flask Routes
 # ==============================================================================
 @app.route("/")
-def index():
-    return send_file('index.html')
+def index(): return send_file('index.html')
 
 @app.route('/favicon.ico')
-def favicon():
-    return '', 204
+def favicon(): return '', 204
 
 @app.route("/upload_image", methods=["POST"])
 def upload_image():
@@ -214,8 +338,7 @@ def upload_image():
         base64_uri = f"data:{mime_type};base64,{encoded_string}"
         image_info = { "id": str(uuid.uuid4()), "name": file.filename, "size": len(image_bytes), "width": width, "height": height, "fileType": mime_type, "base64": base64_uri }
         return jsonify(image_info)
-    except Exception as e:
-        return jsonify({"error": f"Failed to process image: {str(e)}"}), 500
+    except Exception as e: return jsonify({"error": f"Failed to process image: {str(e)}"}), 500
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -224,16 +347,17 @@ def chat():
         sid = data["session"]
         model = data.get("model", "gpt-5-mini")
         action = data.get("action", "chat")
+        temperature = data.get("temperature", 0.9)
 
         if action == "chat":
             text = data["text"]
             image_info = data.get("imageInfo")
-            user_message_to_save = f"\n{text}" if image_info else text
+            user_message_to_save = f"[Image: {image_info['name']}]\n{text}" if image_info else text
             save_msg(sid, "user", user_message_to_save)
             chat_history = load_msgs(sid)
         elif action == "continue":
             chat_history = load_msgs(sid)
-            continue_prompt = { 'role': 'user', 'content': "Please continue generating the response precisely from where you left off. If it is code, ensure it is a valid continuation and start with a comment indicating it's a continuation (e.g., '# Part 2', '// Continued...'). Do not add any introductory phrases or repeat previous content." }
+            continue_prompt = { 'role': 'user', 'content': "Please continue generating the response precisely from where you left off. If it is code, ensure it's a valid continuation and start with a comment indicating it's a continuation (e.g., '# Part 2', '// Continued...'). Do not add any introductory phrases or repeat previous content." }
             chat_history.append(continue_prompt)
             text = "continue"
             image_info = None
@@ -243,7 +367,18 @@ def chat():
         def gen():
             buffer = ""
             try:
-                if model == 'qwen-coder':
+                if model in GROQ_MODELS:
+                    for chunk_text in stream_groq_model(chat_history, model, temperature):
+                        buffer += chunk_text; yield chunk_text
+                # _NEW_: Route for non-streaming Claude model
+                elif model == 'claude-4-sonnet':
+                    full_response = get_claude_sonnet_response(chat_history, temperature)
+                    buffer = full_response
+                    yield full_response
+                elif model == 'pro-reasoner-high':
+                    for chunk_text in stream_pro_reasoner_high(sid, chat_history):
+                        buffer += chunk_text; yield chunk_text
+                elif model == 'qwen-coder':
                     for chunk_text in stream_qween_coder(chat_history):
                         buffer += chunk_text; yield chunk_text
                 elif model == 'deepseek-coder':
@@ -261,7 +396,7 @@ def chat():
                     current_payload["editScript"]["messages"][0]["msg"] = text
                     current_payload['all_messages'] = chat_history[:-1] if len(chat_history) > 1 else []
                     if image_info:
-                        context_id = str(uuid.uuid4()); file_id = image_info['id']
+                        context_id=str(uuid.uuid4()); file_id=image_info['id']
                         attached_files_context = { 'id': context_id, 'title': 'Attached Files', 'type': 'code', 'codeFiles': {'files': []}, 'uploadFiles': { 'files': [{'id': file_id, 'type': 'file', 'path': '', 'name': image_info['name'], 'selected': False, 'status': 'created', 'size': image_info['size'], 'height': image_info.get('height', 0), 'width': image_info.get('width', 0), 'fileType': image_info['fileType']}]}, 'integrationFiles': { 'files': [], 'repo': {'name': '', 'id': '', 'owner': ''}, 'branch': '', 'platform': 'github' } }
                         current_payload['defaultContext'].insert(0, attached_files_context)
                         current_payload['editScript']['context'][context_id] = {file_id: True}
@@ -282,9 +417,9 @@ def chat():
             if buffer:
                 with app.app_context():
                     if action == "continue":
-                        update_last_bot_message(sid, buffer.strip())
+                        update_last_bot_message(sid, buffer)
                     else:
-                        save_msg(sid, "bot", buffer.strip())
+                        save_msg(sid, "bot", buffer)
 
         return Response(stream_with_context(gen()), mimetype="text/plain; charset=utf-8")
         
