@@ -335,9 +335,9 @@ def get_claila_session_id():
         print(f"Error fetching Claila session ID: {e}")
         return None
 
-def stream_claila_gpt5_mini(sid, text):
-    # This logic is critical for maintaining a 1-to-1 chat session
-    if sid not in claila_sessions:
+def stream_claila_gpt5_mini(sid, text, new_chat=False):
+    # If it's a new chat or a new session is needed
+    if new_chat or sid not in claila_sessions:
         session_id = get_claila_session_id()
         csrf_token = get_claila_csrf_token()
         if not session_id or not csrf_token:
@@ -427,6 +427,12 @@ def chat():
             chat_history.append(continue_prompt)
             text = "continue"
             image_info = None
+        elif action == "new":
+            # This action is for explicitly creating a new chat.
+            # No message is sent yet, so we just clear the db history for the sid.
+            # The API call itself will get a new session ID and CSRF token.
+            text = data.get("text", "")
+            image_info = None
         else:
             return Response("Invalid action.", status=400)
 
@@ -457,9 +463,9 @@ def chat():
                     for chunk_text in stream_chat_gpt5_nano(chat_history):
                         buffer += chunk_text; yield chunk_text
                 elif model == 'gpt-5-mini':
-                    # We only send the latest user message to the new API, as it manages context via sessionId
-                    last_user_message = text
-                    for chunk_text in stream_claila_gpt5_mini(sid, last_user_message):
+                    # We pass the 'new_chat' flag to the API call.
+                    # This tells the function to get a new session ID and CSRF token.
+                    for chunk_text in stream_claila_gpt5_mini(sid, text, new_chat=(action == "new")):
                         buffer += chunk_text; yield chunk_text
                 else:
                      yield "🚨 Model not found."
@@ -486,3 +492,4 @@ if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+
