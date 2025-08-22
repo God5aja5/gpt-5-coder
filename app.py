@@ -1,4 +1,4 @@
-# app.py FULL CORRECTED VERSION WITH CLAUDE 4, GROQ SMART MEMORY & PRO REASONER
+# app.py FULL CORRECTED VERSION WITH CLAUDE 4, GROQ SMART MEMORY & NEW GPT-5 MINI API
 
 import os
 import time
@@ -166,22 +166,6 @@ def get_claude_sonnet_response(chat_history, temperature):
     except Exception as e:
         return f"🚨 Claude 4 API Error: {str(e)}"
 
-# --- API: Workik (GPT-5 Mini) ---
-workik_session = requests.Session()
-workik_headers = { 'Accept': 'application/json', 'Accept-Language': 'en-US,en;q=0.9', 'Authorization': 'undefined', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Content-Type': 'application/json; charset=utf-8', 'Origin': 'https://workik.com', 'Pragma': 'no-cache', 'Referer': 'https://workik.com/', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'cross-site', 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', 'X-Is-VSE': 'false', 'X-VSE-Version': '0.0.0', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', }
-workik_url = 'https://wfhbqniijcsamdp2v3i6nts4ke0ebkyj.lambda-url.us-east-1.on.aws/api_ai_playground/ai/playground/ai/trigger'
-workik_base_payload = { "aiInput": "Hello", "defaultContext": [ {'id': 'fd4a1e85-534f-4d73-8822-99161d46e0c7', 'title': 'Relevant Code', 'type': 'code', 'description': '', 'codeFiles': {'files': []}, 'uploadFiles': {'files': []}, 'default_add': True, 'default_button_text': 'Add Files', 'integrationFiles': {'files': [], 'repo': {'name': '', 'id': '', 'owner': ''}, 'branch': '', 'platform': 'github'}}, {'id': '971ede3c-b26b-4b4a-a3ba-02b1b5ce0dd0', 'title': 'Your Database Schema', 'type': 'tables', 'description': '', 'tables': [], 'databases': None, 'schemas': None, 'default_add': True, 'default_button_text': 'Add Database'}, {'id': '5e808426-8981-4482-b0de-263749ae5aa7', 'title': 'Rest API Designs', 'type': 'request', 'description': '', 'requests': [], 'default_add': True, 'default_button_text': 'Add APIs'}, {'id': '749bef72-a509-49ce-8798-c573ac142725', 'title': 'Programming Language', 'type': 'input', 'description': '', 'value_text': '', 'default_add': True, 'default_button_text': 'Add value'}, {'id': '15c85d87-0da2-40c1-acd0-750655e7fa5e', 'title': 'Relevant Packages', 'type': 'checklist', 'description': '', 'options_list': [], 'seperator_text': '', 'default_add': True, 'default_button_text': 'Add Options'} ], "editScript": { 'id': '4b10ac62-51be-4db7-a240-4f28e59aecf8', 'name': 'My workspace', 'messages': [{'type': 'question', 'responseType': 'code', 'sendTo': 'ai', 'msg': 'Hello', 'created_by': '', 'time': '2025-08-11 00:50:42', 'id': '1754873442623_8nsyg35ho', 'group_id': None}], 'status': 'own', 'context': {'fd4a1e85-534f-4d73-8822-99161d46e0c7': {}, '971ede3c-b26b-4b4a-a3ba-02b1b5ce0dd0': {}, '5e808426-8981-4482-b0de-263749ae5aa7': {}, '749bef72-a509-49ce-8798-c573ac142725': "", '15c85d87-0da2-40c1-acd0-750655e7fa5e': {}}, 'response_type': 'code', 'created_by': '' }, "all_messages": [], "codingLanguage": "eyJhbGciOiJIUzI...DbXBq0", "token_type": "workik.openai:gpt_5_mini", "uploaded_files": {}, "msg_type": "message", "wk_ld": "eyJhbGciOiJIUzI...b6erhc", "wk_ck": "eyJhbGciOiJIUzI...GcrFfc8" }
-def clean_workik_response(text):
-    if '"content":' in text:
-        try:
-            clean_text = text.strip()
-            if clean_text.startswith('data:'):
-                clean_text = clean_text[5:].strip()
-            return json.loads(clean_text)['content']
-        except (json.JSONDecodeError, KeyError): return ''
-    return ''
-
-# ... (Other existing API functions: Qween Coder, Deepseek, GPT-5 Coder, GPT-5 Nano, Pro Reasoner High) ...
 # --- API: Qween Coder ---
 qween_coder_session = requests.Session()
 qween_coder_headers = { 'authority': 'promplate-api.free-chat.asia', 'accept': '*/*', 'accept-language': 'en-US,en;q=0.9', 'cache-control': 'no-cache', 'content-type': 'application/json', 'origin': 'https://e11.free-chat.asia', 'pragma': 'no-cache', 'referer': 'https://e11.free-chat.asia/', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-site', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
@@ -247,7 +231,7 @@ def stream_chat_gpt5_coder(chat_history):
 
 # --- API: Chat GPT 5 Nano ---
 chat_gpt5_nano_session = requests.Session()
-chat_gpt5_nano_cookies = { 'cf_clearance': '9oeaYAOIe5lTD5UstzBKH7xGvgKS4izMzHuryteSlas-1755693133-1.2.1.1', 'sbjs_current_add': 'fd%3D2025-08-20%2012%3A02%3A11%7C%7C%7Cep%3Dhttps%3A%2F%2Fchatgpt.ch%2F%7C%7C%7Crf%3Dhttps%3A%2F%2Fwww.google.com%2F', }
+chat_gpt5_nano_cookies = { 'cf_clearance': '9oeaYAOIe5lTD5UstzBKH7xGvgKS4izMzUryteSlas-1755693133-1.2.1.1', 'sbjs_current_add': 'fd%3D2025-08-20%2012%3A02%3A11%7C%7C%7Cep%3Dhttps%3A%2F%2Fchatgpt.ch%2F%7C%7C%7Crf%3Dhttps%3A%2F%2Fwww.google.com%2F', }
 chat_gpt5_nano_headers = { 'authority': 'chatgpt.ch', 'accept': '*/*', 'content-type': 'application/x-www-form-urlencoded', 'origin': 'https://chatgpt.ch', 'referer': 'https://chatgpt.ch/', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
 chat_gpt5_nano_url = "https://chatgpt.ch/wp-admin/admin-ajax.php"
 NANO_SYSTEM_PROMPT = "You are a helpful AI assistant expert in coding. Always answer in clear English."
@@ -314,6 +298,137 @@ def stream_pro_reasoner_high(sid, chat_history):
                     except (json.JSONDecodeError, UnicodeDecodeError): continue
     except Exception as e: yield f"🚨 Pro Reasoner High API Error: {str(e)}"
 
+# --- _NEW_ GPT-5 Mini API (claila.com) ---
+claila_session = requests.Session()
+def get_claila_session_id():
+    cookies = {
+        'theme': 'dark',
+        'dmcfkjn3cdc': 'l8pt3msqnqaessfqncumocu06b',
+        'claila': '7b31744b259c5b06e6fe6edb2c4fef094491e7fd6e6de84a3ec4618a017d61f0',
+        # Note: You may need to update these cookies regularly if the site changes them.
+    }
+    headers = {
+        'authority': 'app.claila.com',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
+        'pragma': 'no-cache',
+        'referer': 'https://app.claila.com/chat',
+        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
+        'sec-ch-ua-mobile': '?1',
+        'sec-ch-ua-platform': '"Android"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+    }
+    try:
+        response = claila_session.get('https://app.claila.com/chat', cookies=cookies, headers=headers)
+        session_id = re.search(r"session_id\s*:\s*'([^']+)'", response.text).group(1)
+        return session_id
+    except Exception as e:
+        print(f"Error fetching Claila session ID: {e}")
+        return None
+
+def get_claila_csrf_token():
+    cookies = {
+        'theme': 'dark',
+        'dmcfkjn3cdc': 'l8pt3msqnqaessfqncumocu06b',
+        'claila': '7b31744b259c5b06e6fe6edb2c4fef094491e7fd6e6de84a3ec4618a017d61f0',
+        # Note: You may need to update these cookies regularly if the site changes them.
+    }
+    headers = {
+        'authority': 'app.claila.com',
+        'accept': '*/*',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
+        'pragma': 'no-cache',
+        'referer': 'https://app.claila.com/chat?registration_ok',
+        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
+        'sec-ch-ua-mobile': '?1',
+        'sec-ch-ua-platform': '"Android"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+        'x-requested-with': 'XMLHttpRequest',
+    }
+    url = "https://app.claila.com/api/v2/getcsrftoken"
+    try:
+        response = claila_session.get(url, cookies=cookies, headers=headers)
+        response.raise_for_status()
+        return response.text.strip()
+    except Exception as e:
+        print(f"Error fetching Claila CSRF token: {e}")
+        return None
+
+# Dictionary to store session IDs for each user (sid)
+claila_sessions = {}
+CLALA_SYSTEM_PROMPT = "You are an AI assistant. Answer clearly and concisely."
+
+def stream_claila_gpt5_mini(sid, text):
+    if sid not in claila_sessions:
+        session_id = get_claila_session_id()
+        csrf_token = get_claila_csrf_token()
+        if not session_id or not csrf_token:
+            yield "🚨 GPT-5 Mini API Error: Failed to initialize a new session."
+            return
+        claila_sessions[sid] = {
+            "session_id": session_id,
+            "csrf_token": csrf_token,
+            "first_message": True,
+        }
+    
+    current_session_data = claila_sessions[sid]
+    
+    message_to_send = text
+    if current_session_data["first_message"]:
+        message_to_send = f"{CLALA_SYSTEM_PROMPT}\n\nUser: {text}"
+        current_session_data["first_message"] = False
+
+    cookies = {
+        'theme': 'dark',
+        'dmcfkjn3cdc': 'l8pt3msqnqaessfqncumocu06b',
+        'claila': '7b31744b259c5b06e6fe6edb2c4fef094491e7fd6e6de84a3ec4618a017d61f0',
+        # Note: You may need to update these cookies regularly if the site changes them.
+    }
+    headers = {
+        'authority': 'app.claila.com',
+        'accept': '*/*',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
+        'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'origin': 'https://app.claila.com',
+        'pragma': 'no-cache',
+        'referer': 'https://app.claila.com/chat?registration_ok',
+        'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
+        'sec-ch-ua-mobile': '?1',
+        'sec-ch-ua-platform': '"Android"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+        'x-csrf-token': current_session_data["csrf_token"],
+        'x-requested-with': 'XMLHttpRequest',
+    }
+    url = "https://app.claila.com/api/v2/unichat2"
+    data = {
+        'model': 'gpt-5-mini',
+        'calltype': 'completion',
+        'message': message_to_send,
+        'sessionId': current_session_data["session_id"],
+    }
+    try:
+        with claila_session.post(url, cookies=cookies, headers=headers, data=data, stream=True, timeout=90) as response:
+            response.raise_for_status()
+            for chunk in response.iter_content(chunk_size=32):
+                if chunk:
+                    yield chunk.decode('utf-8')
+    except Exception as e:
+        yield f"🚨 GPT-5 Mini API Error: {str(e)}"
+
 # ==============================================================================
 # Flask Routes
 # ==============================================================================
@@ -357,7 +472,9 @@ def chat():
             chat_history = load_msgs(sid)
         elif action == "continue":
             chat_history = load_msgs(sid)
-            continue_prompt = { 'role': 'user', 'content': "Please continue generating the response precisely from where you left off. If it is code, ensure it's a valid continuation and start with a comment indicating it's a continuation (e.g., '# Part 2', '// Continued...'). Do not add any introductory phrases or repeat previous content." }
+            # The key change is here: Use a simple, non-directive prompt.
+            # This prevents the AI from adding introductory phrases.
+            continue_prompt = { 'role': 'user', 'content': "Continue precisely from where you left off. Do not add any new introductory phrases, comments, or explanations." }
             chat_history.append(continue_prompt)
             text = "continue"
             image_info = None
@@ -390,23 +507,13 @@ def chat():
                 elif model == 'chat-gpt-5-nano':
                     for chunk_text in stream_chat_gpt5_nano(chat_history):
                         buffer += chunk_text; yield chunk_text
-                else:  # Default to Workik (GPT-5 Mini) API
-                    current_payload = workik_base_payload.copy()
-                    current_payload["aiInput"] = text
-                    current_payload["editScript"]["messages"][0]["msg"] = text
-                    current_payload['all_messages'] = chat_history[:-1] if len(chat_history) > 1 else []
-                    if image_info:
-                        context_id=str(uuid.uuid4()); file_id=image_info['id']
-                        attached_files_context = { 'id': context_id, 'title': 'Attached Files', 'type': 'code', 'codeFiles': {'files': []}, 'uploadFiles': { 'files': [{'id': file_id, 'type': 'file', 'path': '', 'name': image_info['name'], 'selected': False, 'status': 'created', 'size': image_info['size'], 'height': image_info.get('height', 0), 'width': image_info.get('width', 0), 'fileType': image_info['fileType']}]}, 'integrationFiles': { 'files': [], 'repo': {'name': '', 'id': '', 'owner': ''}, 'branch': '', 'platform': 'github' } }
-                        current_payload['defaultContext'].insert(0, attached_files_context)
-                        current_payload['editScript']['context'][context_id] = {file_id: True}
-                        current_payload['uploaded_files'][file_id] = image_info['base64']
-                    with workik_session.post(workik_url, headers=workik_headers, json=current_payload, stream=True, timeout=60) as r:
-                        r.raise_for_status() 
-                        for line in r.iter_lines(decode_unicode=True):
-                            if line:
-                                chunk = clean_workik_response(line)
-                                if chunk: buffer += chunk; yield chunk
+                elif model == 'gpt-5-mini':
+                    # We only send the latest user message to the new API, as it manages context via sessionId
+                    last_user_message = text
+                    for chunk_text in stream_claila_gpt5_mini(sid, last_user_message):
+                        buffer += chunk_text; yield chunk_text
+                else:
+                     yield "🚨 Model not found."
             except requests.exceptions.RequestException as e:
                 error_msg = f"🤖 **Connection Error**\n\nI couldn't reach the AI service for model '{model}'. Details: {e}"
                 yield error_msg; buffer = error_msg
