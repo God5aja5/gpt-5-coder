@@ -131,6 +131,7 @@
                 </optgroup>
                 <optgroup label="Standard Models">
                     <option value="gpt-5-mini">GPT-5 Mini (Default)</option>
+                    <option value="kimi-k2-coder">Kimi K2 (Coder)</option> 
                     <option value="qwen-coder">Qwen Coder</option>
                     <option value="deepseek-coder">Deepseek R1 Coder</option>
                     <option value="chat-gpt-5-coder">Chat GPT 5 Coder</option>
@@ -200,9 +201,9 @@ document.addEventListener('DOMContentLoaded', () => {
         attachedImageInfo: null,
     };
     
-    // _NEW_: List of models that allow temperature configuration
+    // Updated: Only Groq models allow temperature configuration
     const configurableModels = [
-        'moonshotai/kimi-k2-instruct', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3-32b', 'claude-4-sonnet'
+        'moonshotai/kimi-k2-instruct', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3-32b'
     ];
 
     function init() {
@@ -419,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         attachBtn.style.display = showAttachBtn ? 'flex' : 'none';
         if (!showAttachBtn) clearImagePreview();
         
-        // _NEW_: Use the configurableModels list to show/hide slider
+        // Use the configurableModels list to show/hide slider
         const showTempSlider = configurableModels.includes(chat.model);
         temperatureContainer.style.display = showTempSlider ? 'block' : 'none';
         
