@@ -76,7 +76,6 @@ def load_msgs(sid):
     messages = []
     for row in cursor.fetchall():
         role = "assistant" if row['role'] == 'bot' else row['role']
-        # The Pro Reasoner, Groq, and Claude models may send an artifact, so we store it and remove for display
         clean_message = re.sub(r'<think>[\s\S]*?<\/think>', '', row['message'], flags=re.IGNORECASE).strip()
         if clean_message:
             messages.append({'role': role, 'content': clean_message})
@@ -92,16 +91,28 @@ ARTIFACT_PROMPT = {
     "content": "You are a world-class AI assistant with a 'second brain' or 'scratchpad'. Before providing your final answer, you MUST use a `<think>` block to outline your reasoning, plan, and any intermediate steps or self-corrections. This 'thinking' process is for your internal use and helps you arrive at the most accurate and comprehensive response. The user will not see the content of the `<think>` block directly. Structure your thought process logically. After the closing `</think>` tag, provide your final, user-facing answer based on your reasoning. Current date: Friday, August 22, 2025."
 }
 
-# --- Groq API Section (Models 1-4) with Smart Memory ---
+# --- Centralized Model Configuration ---
 groq_client = Groq(api_key="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")
-GROQ_MODELS = {
-    'moonshotai/kimi-k2-instruct': 16384,
-    'openai/gpt-oss-20b': 65536,
-    'openai/gpt-oss-120b': 65536,
-    'qwen/qwen3-32b': 40960
+MODELS_CONFIG = {
+    # Advanced Models
+    'claude-4-sonnet': {'type': 'anthropic'},
+    'pro-reasoner-high': {'type': 'api_hub', 'model_id': 'pro-reasoner-high'},
+    
+    # Groq Models (Fast)
+    'kimi-k2-instruct': {'type': 'groq', 'groq_id': 'moonshotai/kimi-k2-instruct', 'max_tokens': 16384},
+    'gpt-oss-20b': {'type': 'groq', 'groq_id': 'openai/gpt-oss-20b', 'max_tokens': 65536},
+    'gpt-oss-120b': {'type': 'groq', 'groq_id': 'openai/gpt-oss-120b', 'max_tokens': 65536},
+    'qwen3-32b': {'type': 'groq', 'groq_id': 'qwen/qwen3-32b', 'max_tokens': 40960},
+    
+    # Standard Models
+    'gpt-5-mini': {'type': 'claila'},
+    'kimi-k2-coder': {'type': 'kimi-k2', 'kimi_id': 'kimi-k2-coder'},
+    'qwen-coder': {'type': 'api_hub', 'model_id': 'qwen-coder'},
+    'deepseek-coder': {'type': 'api_hub', 'model_id': 'deepseek-coder'},
+    'chat-gpt-5-coder': {'type': 'api_hub', 'model_id': 'chat-gpt-5-coder'},
+    'chat-gpt-5-nano': {'type': 'api_hub', 'model_id': 'chat-gpt-5-nano'},
 }
 
-# Smart Memory function to truncate history for Groq
 def truncate_history(history, max_chars=8000):
     truncated_history = []
     current_chars = 0
@@ -114,18 +125,12 @@ def truncate_history(history, max_chars=8000):
             break
     return truncated_history
 
-def stream_groq_model(chat_history, model_name, temperature):
-    if model_name not in GROQ_MODELS:
-        yield f"🚨 Groq AI Error: Model '{model_name}' not found."
-        return
-    
+def stream_groq_model(chat_history, groq_id, max_tokens, temperature):
     truncated_chat_history = truncate_history(chat_history)
     messages_with_prompt = [ARTIFACT_PROMPT] + truncated_chat_history
-    max_tokens = GROQ_MODELS[model_name]
-
     try:
         completion = groq_client.chat.completions.create(
-            model=model_name, messages=messages_with_prompt, temperature=float(temperature),
+            model=groq_id, messages=messages_with_prompt, temperature=float(temperature),
             max_tokens=max_tokens, top_p=1, stream=True, stop=None
         )
         for chunk in completion:
@@ -134,7 +139,7 @@ def stream_groq_model(chat_history, model_name, temperature):
     except Exception as e:
         yield f"🚨 Groq AI Error: {str(e)}"
 
-# --- New Kimi K2 API Integration ---
+# --- Kimi K2 API Integration (now handles both models) ---
 kimi_k2_session = requests.Session()
 kimi_k2_headers = {
     'authority': 'ai-sdk-starter-groq.vercel.app',
@@ -156,14 +161,7 @@ kimi_k2_headers = {
 kimi_k2_url = 'https://ai-sdk-starter-groq.vercel.app/api/chat'
 
 def stream_kimi_k2_model(chat_history):
-    # This API uses a fresh session for each request, so we just send the latest message
-    # And truncate the history to fit within a reasonable context window.
-    messages_for_api = []
-    # Kimi API expects messages in a specific format
-    # We add the artifact prompt for consistency
-    messages_for_api.append({'parts': [{'type': 'text', 'text': ARTIFACT_PROMPT['content']}], 'id': str(uuid.uuid4()), 'role': 'system'})
-    
-    # We pass the full history to the Kimi API
+    messages_for_api = [{'parts': [{'type': 'text', 'text': ARTIFACT_PROMPT['content']}], 'id': str(uuid.uuid4()), 'role': 'system'}]
     for msg in chat_history:
         role = 'user' if msg['role'] == 'user' else 'assistant'
         messages_for_api.append({'parts': [{'type': 'text', 'text': msg['content']}], 'id': str(uuid.uuid4()), 'role': role})
@@ -194,64 +192,51 @@ def stream_kimi_k2_model(chat_history):
     except Exception as e:
         yield f"🚨 Kimi K2 API Error: {str(e)}"
 
-# --- Old claila.com GPT-5 Mini API (RATE-LIMITED) ---
-claila_session = requests.Session()
-CLALA_SYSTEM_PROMPT = "You are an AI assistant. Answer clearly and concisely."
-claila_sessions = {}
+# --- New API Hub Integration (for multiple models) ---
+api_hub_session = requests.Session()
+API_HUB_URL = 'https://app.claila.com/api/v2/unichat2'
+API_HUB_SYSTEM_PROMPT = "You are an AI assistant. Answer clearly and concisely."
+api_hub_sessions = {}
 
-# --- Fetch CSRF Token ---
-def get_claila_csrf_token():
+def get_api_hub_csrf_token():
     url = "https://app.claila.com/api/v2/getcsrftoken"
-    headers = {
-        'accept': '*/*', 'x-requested-with': 'XMLHttpRequest', 'user-agent': 'Mozilla/5.0'
-    }
+    headers = {'accept': '*/*', 'x-requested-with': 'XMLHttpRequest', 'user-agent': 'Mozilla/5.0'}
     try:
-        response = claila_session.get(url, headers=headers)
+        response = api_hub_session.get(url, headers=headers)
         response.raise_for_status()
         return response.text.strip()
     except Exception as e:
-        print(f"Error fetching Claila CSRF token: {e}")
+        print(f"Error fetching API Hub CSRF token: {e}")
         return None
 
-# --- Fetch Session ID ---
-def get_claila_session_id():
+def get_api_hub_session_id():
     url = "https://app.claila.com/chat"
-    headers = {
-        'accept': 'text/html', 'user-agent': 'Mozilla/5.0'
-    }
+    headers = {'accept': 'text/html', 'user-agent': 'Mozilla/5.0'}
     try:
-        response = claila_session.get(url, headers=headers)
+        response = api_hub_session.get(url, headers=headers)
         response.raise_for_status()
         match = re.search(r"session_id\s*:\s*'([^']+)'", response.text)
         return match.group(1) if match else None
     except Exception as e:
-        print(f"Error fetching Claila session ID: {e}")
+        print(f"Error fetching API Hub session ID: {e}")
         return None
 
-def stream_claila_gpt5_mini(sid, text, new_chat=False):
-    # This logic is critical for maintaining a 1-to-1 chat session
-    if new_chat or sid not in claila_sessions:
-        session_id = get_claila_session_id()
-        csrf_token = get_claila_csrf_token()
+def stream_api_hub_model(sid, model_id, text, new_chat=False):
+    if new_chat or sid not in api_hub_sessions:
+        session_id = get_api_hub_session_id()
+        csrf_token = get_api_hub_csrf_token()
         if not session_id or not csrf_token:
-            yield "🚨 GPT-5 Mini API Error: Failed to initialize a new session. This API might be rate-limited or require cookies."
+            yield f"🚨 API Hub Error: Failed to initialize a new session for {model_id}. This API might be rate-limited or require cookies."
             return
-        claila_sessions[sid] = {
-            "session_id": session_id,
-            "csrf_token": csrf_token,
-            "first_message": True,
-        }
-        # Print the new chat ID to the terminal
-        print(f"🥳 New chat created with GPT-5 Mini. Session ID: {sid}")
+        api_hub_sessions[sid] = {"session_id": session_id, "csrf_token": csrf_token, "first_message": True}
+        print(f"🥳 New chat created for {model_id}. Session ID: {sid}")
     
-    current_session_data = claila_sessions[sid]
-    
+    current_session_data = api_hub_sessions[sid]
     message_to_send = text
     if current_session_data["first_message"]:
-        message_to_send = f"{CLALA_SYSTEM_PROMPT}\n\nUser: {text}"
+        message_to_send = f"{API_HUB_SYSTEM_PROMPT}\n\nUser: {text}"
         current_session_data["first_message"] = False
 
-    url = "https://app.claila.com/api/v2/unichat2"
     headers = {
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'x-csrf-token': current_session_data["csrf_token"],
@@ -259,20 +244,22 @@ def stream_claila_gpt5_mini(sid, text, new_chat=False):
         'user-agent': 'Mozilla/5.0'
     }
     data = {
-        'model': 'gpt-5-mini',
+        'model': model_id,
         'calltype': 'completion',
         'message': message_to_send,
         'sessionId': current_session_data["session_id"],
     }
     try:
-        with claila_session.post(url, headers=headers, data=data, stream=True, timeout=90) as response:
+        with api_hub_session.post(API_HUB_URL, headers=headers, data=data, stream=True, timeout=90) as response:
             response.raise_for_status()
             for chunk in response.iter_content(chunk_size=32):
                 if chunk:
                     yield chunk.decode('utf-8')
     except Exception as e:
-        yield f"🚨 GPT-5 Mini API Error: {str(e)}"
-# --- other API integrations remain the same...
+        yield f"🚨 API Hub Error: {str(e)}"
+# --- Old claila.com GPT-5 Mini API (RATE-LIMITED) ---
+# This is now handled by the general API Hub function
+stream_claila_gpt5_mini = stream_api_hub_model
 
 # ==============================================================================
 # Flask Routes
@@ -308,6 +295,10 @@ def chat():
         model = data.get("model", "gpt-5-mini")
         action = data.get("action", "chat")
         temperature = data.get("temperature", 0.9)
+        
+        model_config = MODELS_CONFIG.get(model)
+        if not model_config:
+            return Response("🚨 Model not found in configuration.", status=404)
 
         if action == "chat":
             text = data["text"]
@@ -322,7 +313,6 @@ def chat():
             text = "continue"
             image_info = None
         elif action == "new":
-            # This action is for explicitly creating a new chat.
             text = data.get("text", "")
             image_info = None
         else:
@@ -331,23 +321,25 @@ def chat():
         def gen():
             buffer = ""
             try:
-                # New logic to handle kimi-k2-coder
-                if model == 'kimi-k2-coder':
+                model_type = model_config['type']
+                if model_type == 'groq':
+                    groq_id = model_config['groq_id']
+                    max_tokens = model_config['max_tokens']
+                    for chunk_text in stream_groq_model(chat_history, groq_id, max_tokens, temperature):
+                        buffer += chunk_text; yield chunk_text
+                elif model_type == 'kimi-k2':
                     for chunk_text in stream_kimi_k2_model(chat_history):
                         buffer += chunk_text; yield chunk_text
-                # Existing models...
-                elif model == 'kimi-k2':
-                    for chunk_text in stream_kimi_k2_model(chat_history):
+                elif model_type in ['claila', 'api_hub']:
+                    model_id = model_config.get('model_id', 'gpt-5-mini')
+                    for chunk_text in stream_api_hub_model(sid, model_id, text, new_chat=(action == "new" or sid not in api_hub_sessions)):
                         buffer += chunk_text; yield chunk_text
-                elif model in GROQ_MODELS:
-                    for chunk_text in stream_groq_model(chat_history, model, temperature):
-                        buffer += chunk_text; yield chunk_text
-                # ...other models...
-                elif model == 'gpt-5-mini':
-                    for chunk_text in stream_claila_gpt5_mini(sid, text, new_chat=(action == "new" or 'session' not in claila_sessions)):
-                        buffer += chunk_text; yield chunk_text
+                elif model_type == 'anthropic':
+                    yield "🚨 Claude 4 is not yet integrated into the backend. Please select another model."
+                    buffer = "🚨 Claude 4 is not yet integrated into the backend. Please select another model."
                 else:
-                     yield "🚨 Model not found."
+                    yield "🚨 Model type not implemented."
+                    buffer = "🚨 Model type not implemented."
             except requests.exceptions.RequestException as e:
                 error_msg = f"🤖 **Connection Error**\n\nI couldn't reach the AI service for model '{model}'. Details: {e}"
                 yield error_msg; buffer = error_msg
