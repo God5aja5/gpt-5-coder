@@ -1,5 +1,3 @@
-# app.py FULL CORRECTED VERSION WITH CLAUDE 4, GROQ SMART MEMORY & NEW GPT-5 MINI API
-
 import os
 import time
 import json
@@ -13,7 +11,6 @@ import requests
 from PIL import Image
 import io
 import random
-from groq import Groq
 
 # ==============================================================================
 # Database Setup
@@ -85,181 +82,213 @@ def load_msgs(sid):
 # API Integration Section
 # ==============================================================================
 
-# --- Shared Artifact System Prompt ---
-ARTIFACT_PROMPT = {
-    "role": "system",
-    "content": "You are a world-class AI assistant with a 'second brain' or 'scratchpad'. Before providing your final answer, you MUST use a `<think>` block to outline your reasoning, plan, and any intermediate steps or self-corrections. This 'thinking' process is for your internal use and helps you arrive at the most accurate and comprehensive response. The user will not see the content of the `<think>` block directly. Structure your thought process logically. After the closing `</think>` tag, provide your final, user-facing answer based on your reasoning. Current date: Friday, August 22, 2025."
-}
+# --- API: Claila (GPT-5 Mini) ---
+claila_session_data = {}
+claila_session = requests.Session()
 
-# --- Centralized Model Configuration ---
-groq_client = Groq(api_key="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")
-MODELS_CONFIG = {
-    # Advanced Models
-    'claude-4-sonnet': {'type': 'anthropic'},
-    'pro-reasoner-high': {'type': 'api_hub', 'model_id': 'pro-reasoner-high'},
-    
-    # Groq Models (Fast)
-    'kimi-k2-instruct': {'type': 'groq', 'groq_id': 'moonshotai/kimi-k2-instruct', 'max_tokens': 16384},
-    'gpt-oss-20b': {'type': 'groq', 'groq_id': 'openai/gpt-oss-20b', 'max_tokens': 65536},
-    'gpt-oss-120b': {'type': 'groq', 'groq_id': 'openai/gpt-oss-120b', 'max_tokens': 65536},
-    'qwen3-32b': {'type': 'groq', 'groq_id': 'qwen/qwen3-32b', 'max_tokens': 40960},
-    
-    # Standard Models
-    'gpt-5-mini': {'type': 'claila'},
-    'kimi-k2-coder': {'type': 'kimi-k2', 'kimi_id': 'kimi-k2-coder'},
-    'qwen-coder': {'type': 'api_hub', 'model_id': 'qwen-coder'},
-    'deepseek-coder': {'type': 'api_hub', 'model_id': 'deepseek-coder'},
-    'chat-gpt-5-coder': {'type': 'api_hub', 'model_id': 'chat-gpt-5-coder'},
-    'chat-gpt-5-nano': {'type': 'api_hub', 'model_id': 'chat-gpt-5-nano'},
-}
-
-def truncate_history(history, max_chars=8000):
-    truncated_history = []
-    current_chars = 0
-    for msg in reversed(history):
-        msg_len = len(msg.get('content', ''))
-        if current_chars + msg_len <= max_chars:
-            truncated_history.insert(0, msg)
-            current_chars += msg_len
-        else:
-            break
-    return truncated_history
-
-def stream_groq_model(chat_history, groq_id, max_tokens, temperature):
-    truncated_chat_history = truncate_history(chat_history)
-    messages_with_prompt = [ARTIFACT_PROMPT] + truncated_chat_history
+def get_csrf_token():
     try:
-        completion = groq_client.chat.completions.create(
-            model=groq_id, messages=messages_with_prompt, temperature=float(temperature),
-            max_tokens=max_tokens, top_p=1, stream=True, stop=None
-        )
-        for chunk in completion:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-    except Exception as e:
-        yield f"🚨 Groq AI Error: {str(e)}"
-
-# --- Kimi K2 API Integration (now handles both models) ---
-kimi_k2_session = requests.Session()
-kimi_k2_headers = {
-    'authority': 'ai-sdk-starter-groq.vercel.app',
-    'accept': '*/*',
-    'accept-language': 'en-US,en;q=0.9',
-    'cache-control': 'no-cache',
-    'content-type': 'application/json',
-    'origin': 'https://ai-sdk-starter-groq.vercel.app',
-    'pragma': 'no-cache',
-    'referer': 'https://ai-sdk-starter-groq.vercel.app/',
-    'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
-    'sec-ch-ua-mobile': '?1',
-    'sec-ch-ua-platform': '"Android"',
-    'sec-fetch-dest': 'empty',
-    'sec-fetch-mode': 'cors',
-    'sec-fetch-site': 'same-origin',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
-}
-kimi_k2_url = 'https://ai-sdk-starter-groq.vercel.app/api/chat'
-
-def stream_kimi_k2_model(chat_history):
-    messages_for_api = [{'parts': [{'type': 'text', 'text': ARTIFACT_PROMPT['content']}], 'id': str(uuid.uuid4()), 'role': 'system'}]
-    for msg in chat_history:
-        role = 'user' if msg['role'] == 'user' else 'assistant'
-        messages_for_api.append({'parts': [{'type': 'text', 'text': msg['content']}], 'id': str(uuid.uuid4()), 'role': role})
-
-    payload = {
-        'selectedModel': 'kimi-k2',
-        'id': str(uuid.uuid4()),
-        'messages': messages_for_api,
-        'trigger': 'submit-user-message',
-    }
-    
-    try:
-        with kimi_k2_session.post(kimi_k2_url, headers=kimi_k2_headers, json=payload, stream=True, timeout=90) as r:
-            r.raise_for_status()
-            for line in r.iter_lines():
-                if line:
-                    decoded = line.decode('utf-8', errors='ignore')
-                    if decoded.startswith("data: "):
-                        decoded = decoded[6:]
-                    if decoded.strip() in ["[DONE]", ""]:
-                        continue
-                    try:
-                        data_json = json.loads(decoded)
-                        if isinstance(data_json, dict) and data_json.get("type") == "text-delta":
-                            yield data_json.get("delta", "")
-                    except json.JSONDecodeError:
-                        continue
-    except Exception as e:
-        yield f"🚨 Kimi K2 API Error: {str(e)}"
-
-# --- New API Hub Integration (for multiple models) ---
-api_hub_session = requests.Session()
-API_HUB_URL = 'https://app.claila.com/api/v2/unichat2'
-API_HUB_SYSTEM_PROMPT = "You are an AI assistant. Answer clearly and concisely."
-api_hub_sessions = {}
-
-def get_api_hub_csrf_token():
-    url = "https://app.claila.com/api/v2/getcsrftoken"
-    headers = {'accept': '*/*', 'x-requested-with': 'XMLHttpRequest', 'user-agent': 'Mozilla/5.0'}
-    try:
-        response = api_hub_session.get(url, headers=headers)
+        url = "https://app.claila.com/api/v2/getcsrftoken"
+        headers = { 'accept': '*/*', 'x-requested-with': 'XMLHttpRequest', 'user-agent': 'Mozilla/5.0' }
+        response = claila_session.get(url, headers=headers)
         response.raise_for_status()
         return response.text.strip()
     except Exception as e:
-        print(f"Error fetching API Hub CSRF token: {e}")
+        print(f"Failed to get CSRF token: {e}")
         return None
 
-def get_api_hub_session_id():
-    url = "https://app.claila.com/chat"
-    headers = {'accept': 'text/html', 'user-agent': 'Mozilla/5.0'}
+def get_claila_session_id():
     try:
-        response = api_hub_session.get(url, headers=headers)
+        url = "https://app.claila.com/chat"
+        headers = { 'accept': 'text/html', 'user-agent': 'Mozilla/5.0' }
+        response = claila_session.get(url, headers=headers)
         response.raise_for_status()
         match = re.search(r"session_id\s*:\s*'([^']+)'", response.text)
         return match.group(1) if match else None
     except Exception as e:
-        print(f"Error fetching API Hub session ID: {e}")
+        print(f"Failed to get Claila session ID: {e}")
         return None
 
-def stream_api_hub_model(sid, model_id, text, new_chat=False):
-    if new_chat or sid not in api_hub_sessions:
-        session_id = get_api_hub_session_id()
-        csrf_token = get_api_hub_csrf_token()
-        if not session_id or not csrf_token:
-            yield f"🚨 API Hub Error: Failed to initialize a new session for {model_id}. This API might be rate-limited or require cookies."
-            return
-        api_hub_sessions[sid] = {"session_id": session_id, "csrf_token": csrf_token, "first_message": True}
-        print(f"🥳 New chat created for {model_id}. Session ID: {sid}")
-    
-    current_session_data = api_hub_sessions[sid]
-    message_to_send = text
-    if current_session_data["first_message"]:
-        message_to_send = f"{API_HUB_SYSTEM_PROMPT}\n\nUser: {text}"
-        current_session_data["first_message"] = False
+def stream_claila_api(sid, chat_history):
+    system_prompt = "You are an AI assistant. Answer clearly and concisely."
+    url = "https://app.claila.com/api/v2/unichat2"
 
+    if sid not in claila_session_data:
+        csrf_token = get_csrf_token()
+        session_id = get_claila_session_id()
+        if not csrf_token or not session_id:
+            yield "🚨 Failed to initialize Claila API session. Please try again."
+            return
+        
+        claila_session_data[sid] = {
+            "csrf_token": csrf_token,
+            "session_id": session_id,
+            "first_message": True
+        }
+        print(f"\n[INFO] New Claila Chat Session Started for Flask SID: {sid}")
+        print(f"[INFO] CSRF Token: {csrf_token}")
+        print(f"[INFO] Claila Session ID: {session_id}\n")
+    
+    current_session = claila_session_data[sid]
     headers = {
         'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'x-csrf-token': current_session_data["csrf_token"],
+        'x-csrf-token': current_session['csrf_token'],
         'x-requested-with': 'XMLHttpRequest',
         'user-agent': 'Mozilla/5.0'
     }
-    data = {
-        'model': model_id,
+
+    message_content = chat_history[-1]['content']
+    if current_session['first_message']:
+        message_content = f"{system_prompt}\n\nUser: {message_content}"
+        current_session['first_message'] = False
+    
+    payload = {
+        'model': 'gpt-5-mini',
         'calltype': 'completion',
-        'message': message_to_send,
-        'sessionId': current_session_data["session_id"],
+        'message': message_content,
+        'sessionId': current_session['session_id'],
     }
+
     try:
-        with api_hub_session.post(API_HUB_URL, headers=headers, data=data, stream=True, timeout=90) as response:
-            response.raise_for_status()
-            for chunk in response.iter_content(chunk_size=32):
+        with requests.post(url, headers=headers, data=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for chunk in r.iter_content(chunk_size=32):
                 if chunk:
                     yield chunk.decode('utf-8')
     except Exception as e:
-        yield f"🚨 API Hub Error: {str(e)}"
-# --- Old claila.com GPT-5 Mini API (RATE-LIMITED) ---
-# This is now handled by the general API Hub function
-stream_claila_gpt5_mini = stream_api_hub_model
+        yield f"🚨 Claila API Error: {str(e)}"
+
+# --- API: Qwen Coder ---
+qwen_coder_session = requests.Session()
+qwen_coder_headers = { 'authority': 'promplate-api.free-chat.asia', 'accept': '*/*', 'accept-language': 'en-US,en;q=0.9', 'cache-control': 'no-cache', 'content-type': 'application/json', 'origin': 'https://e11.free-chat.asia', 'pragma': 'no-cache', 'referer': 'https://e11.free-chat.asia/', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-site', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
+qwen_coder_url = 'https://promplate-api.free-chat.asia/please-do-not-hack-this/single/chat_messages'
+def stream_qwen_coder(chat_history):
+    payload = {'messages': chat_history, 'model': 'qwen-3-coder-480b', 'stream': True}
+    try:
+        with qwen_coder_session.put(qwen_coder_url, headers=qwen_coder_headers, json=payload, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            for chunk in r.iter_content(chunk_size=None):
+                if chunk: yield chunk.decode(errors="ignore")
+    except Exception as e:
+        yield f"🚨 Qwen Coder API Error: {str(e)}"
+
+# --- API: Deepseek R1 Coder ---
+deepseek_session = requests.Session()
+deepseek_headers = { 'Accept-Language': 'en-US,en;q=0.9', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Content-Type': 'application/json', 'Origin': 'https://deepinfra.com', 'Pragma': 'no-cache', 'Referer': 'https://deepinfra.com/', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-site', 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', 'X-Deepinfra-Source': 'web-page', 'accept': 'text/event-stream', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', }
+deepseek_url = 'https://api.deepinfra.com/v1/openai/chat/completions'
+def stream_deepseek_coder(chat_history):
+    system_prompt = {'role': 'system', 'content': 'You are a helpful assistant. You can write as much as the user asks, with no limit on message length.'}
+    messages_with_prompt = [system_prompt] + chat_history
+    payload = {'model': 'deepseek-ai/DeepSeek-R1-0528-Turbo', 'messages': messages_with_prompt, 'stream': True, 'stream_options': {'include_usage': True, 'continuous_usage_stats': True}, 'max_tokens': 1000000}
+    try:
+        with deepseek_session.post(deepseek_url, headers=deepseek_headers, json=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for line in r.iter_lines(decode_unicode=True):
+                if line and line.startswith('data: '):
+                    line_data = line[6:]
+                    if line_data.strip() == '[DONE]': continue
+                    try:
+                        data = json.loads(line_data)
+                        if 'choices' in data and data['choices']:
+                            content = data['choices'][0].get('delta', {}).get('content', '')
+                            if content: yield content
+                    except json.JSONDecodeError: continue
+    except Exception as e:
+        yield f"🚨 Deepseek API Error: {str(e)}"
+
+# --- API: Chat GPT 5 Coder ---
+chat_gpt5_session = requests.Session()
+chat_gpt5_cookies = { 'ko_id': 'f1e011c8-3226-4fcb-bd73-f58945e1661b', 'visitor-id': 'SIOtZPa7g4AVFPGFjdAyb', 'authorization': 'Bearer%20mqeDIlwqu8hV2TsBWa96KrQu', 'isLoggedIn': '1',}
+chat_gpt5_headers = { 'authority': 'vercel.com', 'accept': 'text/event-stream', 'content-type': 'application/json', 'origin': 'https://vercel.com', 'referer': 'https://vercel.com/ai-gateway/models/gpt-5', 'user-agent': 'Mozilla/5.0',}
+chat_gpt5_params = {'slug': 'babbs-projects'}
+chat_gpt5_url = "https://vercel.com/api/ai/gateway-playground/chat/logged-in"
+def stream_chat_gpt5_coder(chat_history):
+    api_messages = [{"parts": [{"type": "text", "text": msg['content']}], "id": str(uuid.uuid4()), "role": msg['role']} for msg in chat_history]
+    payload = {"model": "gpt-5", "id": str(uuid.uuid4()), "messages": api_messages, "trigger": "submit-user-message"}
+    try:
+        with chat_gpt5_session.post(chat_gpt5_url, params=chat_gpt5_params, cookies=chat_gpt5_cookies, headers=chat_gpt5_headers, json=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for line in r.iter_lines(decode_unicode=True):
+                if line and line.startswith("data:"):
+                    line_data = line[5:].strip()
+                    if line_data == "[DONE]": break
+                    try:
+                        obj = json.loads(line_data)
+                        if obj.get("type") == "text-delta":
+                            delta = obj.get("delta", "")
+                            if not delta.startswith("__"): yield delta
+                    except json.JSONDecodeError: continue
+    except Exception as e:
+        yield f"🚨 GPT-5 Coder API Error: {str(e)}"
+
+# --- API: Chat GPT 5 Nano ---
+chat_gpt5_nano_session = requests.Session()
+chat_gpt5_nano_cookies = { 'cf_clearance': '9oeaYAOIe5lTD5UstzBKH7xGvgKS4izMzHuryteSlas-1755693133-1.2.1.1', 'sbjs_current_add': 'fd%3D2025-08-20%2012%3A02%3A11%7C%7C%7Cep%3Dhttps%3A%2F%2Fchatgpt.ch%2F%7C%7C%7Crf%3Dhttps%3A%2F%2Fwww.google.com%2F', }
+chat_gpt5_nano_headers = { 'authority': 'chatgpt.ch', 'accept': '*/*', 'content-type': 'application/x-www-form-urlencoded', 'origin': 'https://chatgpt.ch', 'referer': 'https://chatgpt.ch/', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
+chat_gpt5_nano_url = "https://chatgpt.ch/wp-admin/admin-ajax.php"
+NANO_SYSTEM_PROMPT = "You are a helpful AI assistant expert in coding. Always answer in clear English."
+def stream_chat_gpt5_nano(chat_history):
+    history_str = "\n".join([f"{m['role'].replace('assistant', 'bot').title()}: {m['content']}" for m in chat_history])
+    full_prompt = f"{NANO_SYSTEM_PROMPT}\n{history_str}"
+    payload = { '_wpnonce': '35b5d1c867', 'post_id': '106', 'url': 'https://chatgpt.ch', 'action': 'wpaicg_chat_shortcode_message', 'message': full_prompt, 'bot_id': '0', 'chatbot_identity': 'shortcode', 'wpaicg_chat_history': '[]' }
+    try:
+        with chat_gpt5_nano_session.post(chat_gpt5_nano_url, headers=chat_gpt5_nano_headers, cookies=chat_gpt5_nano_cookies, data=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for line in r.iter_lines(decode_unicode=True):
+                if line and line.startswith("data:"):
+                    data = line[len("data: "):].strip()
+                    if data == "[DONE]": break
+                    try:
+                        j = json.loads(data)
+                        delta = j["choices"][0]["delta"]
+                        if "content" in delta: yield delta["content"]
+                    except (json.JSONDecodeError, KeyError, IndexError): continue
+    except Exception as e:
+        yield f"🚨 ChatGPT-5 Nano API Error: {str(e)}"
+
+# --- API: Pro Reasoner High ---
+pro_reasoner_session = requests.Session()
+pro_reasoner_headers = { 'authority': 'apis.updf.com', 'accept': 'application/json, text/plain, */*', 'accept-language': 'en-US', 'cache-control': 'no-cache', 'device-id': '4158c453c7b295e5e5e71668dcb533b8', 'device-type': 'WEB', 'origin': 'https://ai.updf.com', 'pragma': 'no-cache', 'product-name': 'UPDF', 'referer': 'https://ai.updf.com/', 'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 'sec-ch-ua-mobile': '?1', 'sec-ch-ua-platform': '"Android"', 'sec-fetch-dest': 'empty', 'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-site', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', 'x-token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVaWQiOjQwMjEwNDgyMzksIm4iOiJVUERGXzQwMjEwNDgyMzkiLCJnIjoxLCJjIjpudWxsLCJCdWZmZXJUaW1lIjo4NjQwMCwiZXhwIjoxNzU4MzYyNDc4LCJpc3MiOiJxbVBsdXMiLCJuYmYiOjE3NTU3Njk0Nzh9.kGXxkMaVRLqWsiOTwiuZ549iJvDyIk53Ys0qX7NBd3U', }
+pro_reasoner_url = 'https://apis.updf.com/v1/ai/chat/talk-stream'
+updf_single_chat_ids = {}
+def get_single_chat_id(sid):
+    if sid in updf_single_chat_ids: return updf_single_chat_ids[sid]
+    try:
+        response = pro_reasoner_session.get('https://apis.updf.com/v1/ai/chat/single-chat-id', headers=pro_reasoner_headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get('code') == 200 and 'data' in data and 'single_chat_id' in data['data']:
+            chat_id = data['data']['single_chat_id']
+            updf_single_chat_ids[sid] = chat_id
+            return chat_id
+        else: return None
+    except Exception as e:
+        print(f"Failed to get new single_chat_id: {e}")
+        return None
+def stream_pro_reasoner_high(sid, chat_history):
+    single_chat_id = get_single_chat_id(sid)
+    if not single_chat_id:
+        yield "🚨 Pro Reasoner High API Error: Failed to initialize chat."
+        return
+    api_history = [{'role': 'user' if m['role'] == 'user' else 'assistant', 'content': re.sub(r'<think>[\s\S]*?<\/think>', '', m['content'], flags=re.IGNORECASE).strip()} for m in chat_history]
+    payload = { 'id': random.randint(1, 10**18), 'content': api_history[-1]['content'], 'target_lang': 'en', 'chat_type': 'random_talk', 'chat_id': random.randint(1, 10**18), 'file_id': 0, 'knowledge_id': 0, 'continue': 0, 'retry': 0, 'model': 'reasoning', 'provider': 'deepseek', 'format': 'md', 'single_chat_id': single_chat_id, 'history': api_history[:-1] }
+    try:
+        with pro_reasoner_session.post(pro_reasoner_url, headers=pro_reasoner_headers, json=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line.decode('utf-8'))
+                        if 'choices' in chunk and chunk['choices']:
+                            for choice in chunk['choices']:
+                                delta = choice.get('delta', {})
+                                content = delta.get('content')
+                                reasoning_content = delta.get('reasoning_content')
+                                if content or reasoning_content:
+                                    full_chunk = f"<think>{reasoning_content}</think>{content}" if reasoning_content else content
+                                    yield full_chunk
+                    except (json.JSONDecodeError, UnicodeDecodeError): continue
+    except Exception as e: yield f"🚨 Pro Reasoner High API Error: {str(e)}"
 
 # ==============================================================================
 # Flask Routes
@@ -294,12 +323,7 @@ def chat():
         sid = data["session"]
         model = data.get("model", "gpt-5-mini")
         action = data.get("action", "chat")
-        temperature = data.get("temperature", 0.9)
         
-        model_config = MODELS_CONFIG.get(model)
-        if not model_config:
-            return Response("🚨 Model not found in configuration.", status=404)
-
         if action == "chat":
             text = data["text"]
             image_info = data.get("imageInfo")
@@ -308,12 +332,9 @@ def chat():
             chat_history = load_msgs(sid)
         elif action == "continue":
             chat_history = load_msgs(sid)
-            continue_prompt = { 'role': 'user', 'content': "Continue precisely from where you left off. Do not add any new introductory phrases, comments, or explanations." }
+            continue_prompt = { 'role': 'user', 'content': "Please continue generating the response precisely from where you left off. If it is code, ensure it's a valid continuation and start with a comment indicating it's a continuation (e.g., '# Part 2', '// Continued...'). Do not add any introductory phrases or repeat previous content." }
             chat_history.append(continue_prompt)
             text = "continue"
-            image_info = None
-        elif action == "new":
-            text = data.get("text", "")
             image_info = None
         else:
             return Response("Invalid action.", status=400)
@@ -321,25 +342,28 @@ def chat():
         def gen():
             buffer = ""
             try:
-                model_type = model_config['type']
-                if model_type == 'groq':
-                    groq_id = model_config['groq_id']
-                    max_tokens = model_config['max_tokens']
-                    for chunk_text in stream_groq_model(chat_history, groq_id, max_tokens, temperature):
+                if model == 'gpt-5-mini':
+                    for chunk_text in stream_claila_api(sid, chat_history):
                         buffer += chunk_text; yield chunk_text
-                elif model_type == 'kimi-k2':
-                    for chunk_text in stream_kimi_k2_model(chat_history):
+                elif model == 'qwen-coder':
+                    for chunk_text in stream_qwen_coder(chat_history):
                         buffer += chunk_text; yield chunk_text
-                elif model_type in ['claila', 'api_hub']:
-                    model_id = model_config.get('model_id', 'gpt-5-mini')
-                    for chunk_text in stream_api_hub_model(sid, model_id, text, new_chat=(action == "new" or sid not in api_hub_sessions)):
+                elif model == 'deepseek-coder':
+                    for chunk_text in stream_deepseek_coder(chat_history):
                         buffer += chunk_text; yield chunk_text
-                elif model_type == 'anthropic':
-                    yield "🚨 Claude 4 is not yet integrated into the backend. Please select another model."
-                    buffer = "🚨 Claude 4 is not yet integrated into the backend. Please select another model."
+                elif model == 'chat-gpt-5-coder':
+                    for chunk_text in stream_chat_gpt5_coder(chat_history):
+                        buffer += chunk_text; yield chunk_text
+                elif model == 'chat-gpt-5-nano':
+                    for chunk_text in stream_chat_gpt5_nano(chat_history):
+                        buffer += chunk_text; yield chunk_text
+                elif model == 'pro-reasoner-high':
+                    for chunk_text in stream_pro_reasoner_high(sid, chat_history):
+                        buffer += chunk_text; yield chunk_text
                 else:
-                    yield "🚨 Model type not implemented."
-                    buffer = "🚨 Model type not implemented."
+                    error_msg = f"🚫 The selected model '{model}' is not supported."
+                    yield error_msg
+                    buffer = error_msg
             except requests.exceptions.RequestException as e:
                 error_msg = f"🤖 **Connection Error**\n\nI couldn't reach the AI service for model '{model}'. Details: {e}"
                 yield error_msg; buffer = error_msg
