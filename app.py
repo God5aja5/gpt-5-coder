@@ -409,7 +409,7 @@ def chat():
                 elif model == 'pro-reasoner-high':
                     for chunk_text in stream_pro_reasoner_high(sid, chat_history):
                         buffer += chunk_text; yield chunk_text
-                elif model == 'kimi-k2':
+                elif model == 'kimi-k2-coder':
                     for chunk_text in stream_kimi_k2_coder(chat_history):
                         buffer += chunk_text; yield chunk_text
                 else:
