@@ -82,6 +82,55 @@ def load_msgs(sid):
 # API Integration Section
 # ==============================================================================
 
+# --- API: Kimi K2 (coder) ---
+kimi_k2_session = requests.Session()
+kimi_k2_headers = {
+    'authority': 'ai-sdk-starter-groq.vercel.app',
+    'accept': '*/*',
+    'accept-language': 'en-US,en;q=0.9',
+    'cache-control': 'no-cache',
+    'content-type': 'application/json',
+    'origin': 'https://ai-sdk-starter-groq.vercel.app',
+    'pragma': 'no-cache',
+    'referer': 'https://ai-sdk-starter-groq.vercel.app/',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+}
+kimi_k2_url = 'https://ai-sdk-starter-groq.vercel.app/api/chat'
+def stream_kimi_k2_coder(chat_history):
+    # Format chat history for the Kimi K2 API
+    api_messages = [
+        {"parts": [{"type": "text", "text": msg['content']}], "id": str(uuid.uuid4())[:12], "role": msg['role']}
+        for msg in chat_history
+    ]
+    
+    payload = {
+        'selectedModel': 'kimi-k2',
+        'id': str(uuid.uuid4())[:12],
+        'messages': api_messages,
+        'trigger': 'submit-user-message',
+    }
+    
+    try:
+        with kimi_k2_session.post(kimi_k2_url, headers=kimi_k2_headers, json=payload, stream=True, timeout=90) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if line:
+                    try:
+                        decoded = line.decode('utf-8')
+                        if decoded.startswith("data: "):
+                            decoded = decoded[6:]
+                        if decoded in ["[DONE]", ""]:
+                            continue
+                        
+                        data_json = json.loads(decoded)
+                        if isinstance(data_json, dict) and data_json.get("type") == "text-delta":
+                            delta = data_json.get("delta", "")
+                            yield delta
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        continue
+    except Exception as e:
+        yield f"🚨 Kimi K2 API Error: {str(e)}"
+
 # --- API: Claila (GPT-5 Mini) ---
 claila_session_data = {}
 claila_session = requests.Session()
@@ -223,7 +272,7 @@ def stream_chat_gpt5_coder(chat_history):
 
 # --- API: Chat GPT 5 Nano ---
 chat_gpt5_nano_session = requests.Session()
-chat_gpt5_nano_cookies = { 'cf_clearance': '9oeaYAOIe5lTD5UstzBKH7xGvgKS4izMzHuryteSlas-1755693133-1.2.1.1', 'sbjs_current_add': 'fd%3D2025-08-20%2012%3A02%3A11%7C%7C%7Cep%3Dhttps%3A%2F%2Fchatgpt.ch%2F%7C%7C%7Crf%3Dhttps%3A%2F%2Fwww.google.com%2F', }
+chat_gpt5_nano_cookies = { 'cf_clearance': '9oeaYAOIe5lTD5UstzBKH7xKvgKS4izMzHuryteSlas-1755693133-1.2.1.1', 'sbjs_current_add': 'fd%3D2025-08-20%2012%3A02%3A11%7C%7C%7Cep%3Dhttps%3A%2F%2Fchatgpt.ch%2F%7C%7C%7Crf%3Dhttps%3A%2F%2Fwww.google.com%2F', }
 chat_gpt5_nano_headers = { 'authority': 'chatgpt.ch', 'accept': '*/*', 'content-type': 'application/x-www-form-urlencoded', 'origin': 'https://chatgpt.ch', 'referer': 'https://chatgpt.ch/', 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36', }
 chat_gpt5_nano_url = "https://chatgpt.ch/wp-admin/admin-ajax.php"
 NANO_SYSTEM_PROMPT = "You are a helpful AI assistant expert in coding. Always answer in clear English."
@@ -359,6 +408,9 @@ def chat():
                         buffer += chunk_text; yield chunk_text
                 elif model == 'pro-reasoner-high':
                     for chunk_text in stream_pro_reasoner_high(sid, chat_history):
+                        buffer += chunk_text; yield chunk_text
+                elif model == 'kimi-k2':
+                    for chunk_text in stream_kimi_k2_coder(chat_history):
                         buffer += chunk_text; yield chunk_text
                 else:
                     error_msg = f"🚫 The selected model '{model}' is not supported."
