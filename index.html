@@ -124,10 +124,10 @@
                     <option value="pro-reasoner-high">Pro Reasoner High</option>
                 </optgroup>
                 <optgroup label="Groq Models (Fast)">
-                    <option value="moonshotai/kimi-k2-instruct">Kimi K2 Instruct</option>
-                    <option value="openai/gpt-oss-20b">GPT-OSS 20b</option>
-                    <option value="openai/gpt-oss-120b">GPT-OSS 120b</option>
-                    <option value="qwen/qwen3-32b">Qwen3 32b</option>
+                    <option value="kimi-k2-instruct">Kimi K2 Instruct</option>
+                    <option value="gpt-oss-20b">GPT-OSS 20b</option>
+                    <option value="gpt-oss-120b">GPT-OSS 120b</option>
+                    <option value="qwen3-32b">Qwen3 32b</option>
                 </optgroup>
                 <optgroup label="Standard Models">
                     <option value="gpt-5-mini">GPT-5 Mini (Default)</option>
@@ -203,8 +203,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Updated: Only Groq models allow temperature configuration
     const configurableModels = [
-        'moonshotai/kimi-k2-instruct', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3-32b'
+        'kimi-k2-instruct', 'gpt-oss-20b', 'gpt-oss-120b', 'qwen3-32b'
     ];
+    
+    // List of models that support image uploads
+    const imageSupportedModels = ['gpt-5-mini'];
 
     function init() {
         loadStateFromLocalStorage();
@@ -416,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateModelControls(chat) {
         modelSelector.value = chat.model || 'gpt-5-mini';
         modelSelector.disabled = chat.messages.length > 0;
-        const showAttachBtn = chat.model === 'gpt-5-mini';
+        const showAttachBtn = imageSupportedModels.includes(chat.model);
         attachBtn.style.display = showAttachBtn ? 'flex' : 'none';
         if (!showAttachBtn) clearImagePreview();
         
@@ -518,11 +521,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const messageText = inputTextArea.value.trim();
+        const currentModel = modelSelector.value;
+        const isImageUploadSupported = imageSupportedModels.includes(currentModel);
+
         if ((!messageText && !appState.attachedImageInfo) || appState.isLoading) return;
+        if (appState.attachedImageInfo && !isImageUploadSupported) {
+            alert("Image uploads are only supported for the 'GPT-5 Mini' model.");
+            clearImagePreview();
+            return;
+        }
+
         setLoadingState(true);
         const currentChat = appState.chats[appState.currentChatId];
         const lastMessage = currentChat.messages[currentChat.messages.length - 1];
         const isRegenerating = lastMessage && lastMessage.role === 'user' && lastMessage.content.includes(messageText);
+        
         if (!isRegenerating) {
             let userMessage = { role: 'user', content: messageText, image: null, rawText: messageText };
             if (appState.attachedImageInfo) {
@@ -589,7 +602,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleFileSelect(e) {
         const file = e.target.files[0];
+        const currentModel = modelSelector.value;
         if (!file || !file.type.startsWith('image/')) return;
+        if (!imageSupportedModels.includes(currentModel)) {
+            alert("Image uploads are only supported for the 'GPT-5 Mini' model. Please select that model to attach an image.");
+            fileInput.value = '';
+            return;
+        }
+
         setLoadingState(true); setStatus('Uploading...', 'typing');
         const formData = new FormData();
         formData.append('file', file);
@@ -646,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sendBtn.classList.toggle('hidden', isLoading);
         stopBtn.classList.toggle('hidden', !isLoading);
         const currentChat = appState.chats[appState.currentChatId];
-        const showAttach = !isLoading && currentChat && currentChat.model === 'gpt-5-mini';
+        const showAttach = !isLoading && currentChat && imageSupportedModels.includes(currentChat.model);
         attachBtn.style.display = showAttach ? 'flex' : 'none';
         inputTextArea.disabled = isLoading;
         newChatBtn.style.opacity = isLoading ? '0.5' : '1';
